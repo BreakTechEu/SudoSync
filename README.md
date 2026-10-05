@@ -1,39 +1,56 @@
 # SudoSync for Kodi
 
-Lekka wtyczka usługi (service) dla odtwarzacza Kodi, zapewniająca automatyczną, dwukierunkową synchronizację stanu obejrzenia, punktów wznowienia (resume point), daty ostatniego odtworzenia oraz przyznanej oceny pomiędzy wieloma instalcjami KODI w sieci lokalnej bez konieczności stawiania centralnej bazy MySQL/MariaDB.
+A lightweight background service add-on for Kodi that provides automatic, two-way synchronization of watch states, resume points, user ratings, and last-played timestamps across multiple Kodi instances in the same local network — without requiring an external MySQL/MariaDB server.
 
-Synchronizacja opiera się na wspólnym zasobie sieciowym (SMB / NFS) oraz odpytywaniu oficjalnego API Kodi (JSON-RPC).
-
----
-
-## Główne cechy
-
-- **Brak zewnętrznego serwera bazy:** Wystarczy współdzielony katalog sieciowy z serwera NAS, routera lub komputera w tej samej sieci LAN.
-- **Bezpieczeństwo biblioteki:** Brak bezpośredniej ingerencji w pliki bazy SQLite (`MyVideos*.db`) – modyfikacje odbywają się wyłącznie przez procedury JSON-RPC Kodi.
-- **Wersjonowanie i rozwiązywanie konfliktów:** Każde pole posiada niezależny znacznik czasu i identyfikator klienta, co zapobiega pętlom zwrotnym i niekontrolowanemu nadpisywaniu danych.
-- **Działanie w tle na Android TV / Google TV:** Mechanizm okresowego badania różnic niweluje problem gubienia zdarzeń systemowych `OnUpdate`/`OnStop` na przystawkach telewizyjnych.
-- **Ochrona przed nadpisywaniem podczas skanowania:** W trakcie skanowania biblioteki i odczytu plików `.nfo` zmiany nie są traktowane jako nadrzędne.
+Synchronization relies on a shared network directory (SMB, NFS, or local share) and safe JSON-RPC API calls.
 
 ---
 
-## Synchronizowane pola
+## Key Features
 
-- Status obejrzenia (licznik odtworzeń / stan watched-unwatched),
-- Dokładny punkt wznowienia wideo (*resume position*),
-- Data ostatniego odtworzenia (*last played*),
-- Oceny użytkownika (*userratings*).
+- **No Dedicated Database Required:** Uses a shared network path accessible by your devices (NAS, local PC, or network share).
+- **Safe & Non-Destructive:** Interacts exclusively through Kodi's official JSON-RPC API. It never touches or locks internal SQLite files (`MyVideos*.db`) directly.
+- **Robust Conflict Model:** Each synchronized field maintains its own timestamp and client version, preventing race conditions and feedback loops.
+- **Optimized for Android TV & Streaming Devices:** A lightweight state diff engine handles platforms where Kodi occasionally fails to trigger `OnUpdate` or `OnStop` notifications.
+- **Scraper & NFO Quarantine:** Newly scanned library items and NFO imports receive older internal versions to prevent accidental overwrites of existing shared playback progress.
 
 ---
 
-## Instalacja i konfiguracja
+## Synchronized Attributes
 
-1. **Pobranie wtyczki:**
-   - Przejdź do zakładki **Releases** po prawej stronie tego repozytorium.
-   - Pobierz najnowszy plik `service.sudosync-1.0.0.zip`.
+- Watch state & play count (watched / unwatched),
+- Exact playback resume position,
+- Last played timestamp,
+- User ratings (1–10).
 
-2. **Instalacja w Kodi:**
-   - W menu Kodi wejdź w: *Dodatki -> Zainstaluj z pliku zip* i wskaż pobrane archiwum.
+---
 
-3. **Konfiguracja ścieżki wymiany:**
-   - Otwórz ustawienia wtyczki SudoSync w Kodi.
-   - Podaj (wybierz narzędziem KODI) ścieżkę do wspólnego katalogu w Twojej sieci lokalnej, do którego UPRAWNIENIA ZAPISU mają wszystkie instancje Kodi, np.: smb://192.168.1.100/Wspoldzielony/.SudoSync/
+## Installation & Setup
+
+1. **Download:**
+   - Go to the **Releases** section on the right side of this repository.
+   - Download the latest `service.sudosync-1.0.0.zip` package.
+
+2. **Install in Kodi:**
+   - In Kodi, navigate to: *Settings -> Add-ons -> Install from zip file*.
+   - Select the downloaded archive.
+
+3. **Configure Network Path:**
+   - Open SudoSync add-on settings in Kodi.
+   - Specify the shared network folder where all Kodi instances have read and write permissions, e.g.:
+     ```text
+     smb://192.168.1.100/SharedFolder/.SudoSync/
+     ```
+
+---
+
+## Compatibility
+
+- Kodi v19 Matrix, v20 Nexus, and v21 Omega.
+- Multi-platform: Windows, Android / Google TV, Linux, CoreELEC / LibreELEC.
+
+---
+
+## License
+
+This project is open-source software licensed under the GPL-3.0 License.
