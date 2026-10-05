@@ -1,3 +1,7 @@
+**English** | [Polski](README.pl.md)
+
+---
+
 # SudoSync for Kodi
 
 A lightweight background service add-on for Kodi that provides automatic, two-way synchronization of watch states, resume points, user ratings, and last-played timestamps across multiple Kodi instances in the same local network — without requiring an external MySQL/MariaDB server.
