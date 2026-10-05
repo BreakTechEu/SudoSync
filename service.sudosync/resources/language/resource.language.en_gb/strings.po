@@ -1,0 +1,173 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: SudoSync\n"
+"Language: en_GB\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgctxt "#32000"
+msgid "SudoSync"
+msgstr "SudoSync"
+
+msgctxt "#32001"
+msgid "Connection"
+msgstr "Connection"
+
+msgctxt "#32002"
+msgid "Synchronization folder"
+msgstr "Synchronization folder"
+
+msgctxt "#32003"
+msgid "SMB folder shared by all Kodi installations."
+msgstr "SMB folder shared by all Kodi installations."
+
+msgctxt "#32004"
+msgid "Device name"
+msgstr "Device name"
+
+msgctxt "#32005"
+msgid "Optional. If empty, Kodi friendly name is used."
+msgstr "Optional. If empty, Kodi friendly name is used."
+
+msgctxt "#32006"
+msgid "Snapshot interval (seconds)"
+msgstr "Snapshot interval (seconds)"
+
+msgctxt "#32007"
+msgid "Collect-only mode periodically refreshes this device snapshot."
+msgstr "Collect-only mode periodically refreshes this device snapshot."
+
+msgctxt "#32008"
+msgid "Show notifications"
+msgstr "Show notifications for data received from another Kodi"
+
+msgctxt "#32010"
+msgid "Tools"
+msgstr "Tools"
+
+msgctxt "#32011"
+msgid "Collect snapshot now"
+msgstr "Collect snapshot now"
+
+msgctxt "#32012"
+msgid "Reads the local Kodi library and writes only this device file to NAS."
+msgstr "Reads the local Kodi library and writes only this device file to NAS."
+
+msgctxt "#32013"
+msgid "Show status"
+msgstr "Show status"
+
+msgctxt "#32014"
+msgid "Shows client ID, Kodi version and last local snapshot status."
+msgstr "Shows client ID, Kodi version and last local snapshot status."
+
+msgctxt "#32020"
+msgid "Safety"
+msgstr "Safety"
+
+msgctxt "#32021"
+msgid "Collect-only mode"
+msgstr "Collect-only mode"
+
+msgctxt "#32022"
+msgid "Version 0.1 requires this option. No Kodi library data is modified."
+msgstr "Version 0.1 requires this option. No Kodi library data is modified."
+
+msgctxt "#32030"
+msgid "Updates"
+msgstr "Updates"
+
+msgctxt "#32031"
+msgid "Check for updates in .SudoSync at startup"
+msgstr "Check for updates in .SudoSync at startup"
+
+msgctxt "#32032"
+msgid "Looks for newer service.sudosync-*.zip packages in the shared synchronization folder."
+msgstr "Looks for newer service.sudosync-*.zip packages in the shared synchronization folder."
+
+msgctxt "#32033"
+msgid "Check for update now"
+msgstr "Check and install update"
+
+msgctxt "#32034"
+msgid "Checks the shared .SudoSync folder for a newer SudoSync ZIP package."
+msgstr "Checks .SudoSync and, if a newer version exists, installs it without opening the hidden folder."
+
+msgctxt "#32015"
+msgid "Run DRY RUN analysis now"
+msgstr "Run DRY RUN analysis now"
+
+msgctxt "#32016"
+msgid "Compares all client snapshots and writes a report. It never modifies Kodi libraries."
+msgstr "Compares all client snapshots and writes a report. It never modifies Kodi libraries."
+
+msgctxt "#32035"
+msgid "Install updates automatically"
+msgstr "Install updates automatically from .SudoSync"
+
+msgctxt "#32036"
+msgid "Installs a newer package directly from the shared hidden folder. The new code becomes fully active after Kodi restarts."
+msgstr "Installs a newer package directly from the shared hidden folder. The new code becomes fully active after Kodi restarts."
+
+msgctxt "#32040"
+msgid "Initial synchronization"
+msgstr "Initial synchronization"
+
+msgctxt "#32041"
+msgid "Allow one-shot initial synchronization (modifies Kodi library)"
+msgstr "Arm one-shot initial synchronization (10 min)"
+
+msgctxt "#32042"
+msgid "Safety interlock. It is switched off again after every attempt."
+msgstr "Arms writes immediately without closing settings. Expires after 10 minutes and is cleared after every attempt."
+
+msgctxt "#32043"
+msgid "Apply initial synchronization to THIS Kodi"
+msgstr "Apply initial synchronization to THIS Kodi"
+
+msgctxt "#32044"
+msgid "Creates a backup, rebuilds DRY RUN and applies only the safe plan to this Kodi. Background writes remain disabled."
+msgstr "Creates a backup, rebuilds DRY RUN and applies only the safe initial plan. Live synchronization starts only after all Kodi clients finish initialization."
+
+msgctxt "#32045"
+msgid "This Kodi is the base device for the first synchronization"
+msgstr "Set THIS Kodi as the base device for the first synchronization"
+
+msgctxt "#32046"
+msgid "Available until initialization is completed. The device must have an explicit name. Selection is stored in the shared .SudoSync configuration."
+msgstr "Explicitly selects this Kodi as the base device. If another device is already selected, clear the base-device selection first."
+
+msgctxt "#32047"
+msgid "Clear base-device selection"
+msgstr "Clear base-device selection"
+
+msgctxt "#32048"
+msgid "Allows choosing a different base Kodi before the first synchronization is completed."
+msgstr "Clears the current selection. Only then can a different base Kodi be selected before initialization is completed."
+
+msgctxt "#32050"
+msgid "Live synchronization"
+msgstr "Live synchronization"
+
+msgctxt "#32051"
+msgid "Enable live synchronization after initialization"
+msgstr "Enable live synchronization after initialization"
+
+msgctxt "#32052"
+msgid "Automatically synchronizes watch state, resume and user ratings after the first synchronization is complete."
+msgstr "Automatically synchronizes watched state, playcount, lastplayed, resume and user ratings after the first synchronization is complete."
+
+msgctxt "#32053"
+msgid "Peer polling interval (seconds)"
+msgstr "Peer polling interval (seconds)"
+
+msgctxt "#32054"
+msgid "How often this Kodi checks other client snapshots when there is no local event."
+msgstr "How often this Kodi checks other client snapshots when there is no local event."
+
+msgctxt "#32055"
+msgid "Synchronize now"
+msgstr "Synchronize now"
+
+msgctxt "#32056"
+msgid "Runs one live synchronization cycle immediately and shows a final summary."
+msgstr "Runs one live synchronization cycle immediately and shows a final summary."
