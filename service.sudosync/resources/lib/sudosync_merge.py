@@ -690,7 +690,12 @@ def build_live_plan(snapshots):
             if len(distinct) > 1:
                 detail = {
                     "field": field,
-                    "version": {"ts": top_key[0], "seq": top_key[1], "client_id": top_key[2]},
+                    "version": {
+                        "lc": top_key[0],
+                        "ts": top_key[1],
+                        "seq": top_key[2],
+                        "client_id": top_key[3],
+                    },
                     "values": [
                         {"client": candidate[0]["client_name"], "value": candidate[1]}
                         for candidate in top
