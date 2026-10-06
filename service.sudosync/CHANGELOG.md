@@ -1,10 +1,10 @@
+SudoSync 1.1.0 (v2 Beta)
+======================
+
+Dodano eksperymentalną obsługę "SudoSync ID" dla prywatnych materiałów wideo, które nie posiadają oficjalnego identyfikatora (IMDb/TMDb). SudoSync pozwala teraz wstrzykiwać własne unikalne ID prosto do plików `.nfo` po stronie współdzielonej biblioteki.
+
 SudoSync 1.0.0
 ==============
-
-SudoSync 1.0.0 is the first production release. It keeps the tested 0.4.4 synchronization logic unchanged and promotes it to the stable release line.
-
-
-Naprawa LIVE dla urządzeń, na których Kodi nie zawsze dostarcza powiadomienie OnUpdate/OnStop (szczególnie Android/Google TV). Co cykl LIVE wykonywany jest lekki test wyłącznie lokalnych ID i pól stanu. Pełny snapshot powstaje tylko po wykryciu różnicy. Po zatrzymaniu odtwarzania reakcja została skrócona z 5 do około 2 sekund. Podczas odtwarzania SudoSync nadal nigdy nie stosuje zdalnych zapisów, ale może bezpiecznie opublikować wykryty stan lokalny.
 
 0.4.1 naprawia też mylący DRY RUN przy mieszance snapshotów 0.3/0.4: zamiast tysięcy pozornych zmian oceny null -> 0 raport pokazuje oczekiwanie na aktualizację klientów.
 

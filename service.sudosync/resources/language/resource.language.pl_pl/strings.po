@@ -171,3 +171,31 @@ msgstr "Synchronizuj teraz"
 msgctxt "#32056"
 msgid "Runs one live synchronization cycle immediately and shows a final summary."
 msgstr "Natychmiast uruchamia jeden cykl synchronizacji bieżącej i pokazuje końcowe podsumowanie."
+
+msgctxt "#32060"
+msgid "Private videos"
+msgstr "Prywatne wideo"
+
+msgctxt "#32061"
+msgid "Enable SudoSync ID for local media without standard IDs"
+msgstr "Włącz SudoSync ID dla lokalnych multimediów"
+
+msgctxt "#32062"
+msgid "Allows creating a custom ID for media not present in online databases."
+msgstr "Pozwala tworzyć własne ID dla wideo niewystępujących w bazach online."
+
+msgctxt "#32063"
+msgid "Network Prefix (leave empty for auto)"
+msgstr "Prefiks sieci (puste = auto)"
+
+msgctxt "#32064"
+msgid "Custom network identifier to prevent conflicts when moving files."
+msgstr "Własny identyfikator sieci zapobiegający konfliktom przy przenoszeniu plików."
+
+msgctxt "#32065"
+msgid "Assign SudoSync IDs to library items"
+msgstr "Przypisz identyfikatory SudoSync w bibliotece"
+
+msgctxt "#32066"
+msgid "Injects SudoSync IDs to all items in Kodi library missing a standard ID."
+msgstr "Zapisuje SudoSync ID w plikach nfo wszystkich pozycji biblioteki, które nie mają ID."

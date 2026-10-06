@@ -5,7 +5,7 @@ from collections import Counter, defaultdict
 import re
 import unicodedata
 
-STRONG_ID_TYPES = ("imdb", "tmdb", "tvdb", "trakt")
+STRONG_ID_TYPES = ("imdb", "tmdb", "tvdb", "trakt", "sudosync")
 
 
 def _safe_int(value, default=0):

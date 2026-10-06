@@ -452,6 +452,26 @@ def main():
                 nolabel="Anuluj",
             ):
                 install_latest_update(show_dialogs=True)
+        elif action in ("assignids", "assign_ids"):
+            from resources.lib.sudosync_core import assign_sudosync_ids
+            if not addon_settings().get("sudosync_id_enabled"):
+                xbmcgui.Dialog().ok(
+                    "SudoSync",
+                    "Funkcja jest wyłączona. Najpierw ją włącz i zatwierdź opcje przyciskiem OK."
+                )
+                return
+            if not xbmcgui.Dialog().yesno(
+                "SudoSync — własne identyfikatory",
+                "Czy na pewno chcesz nadpisać pliki .nfo bez standardowego ID? Kodi zostanie poinformowane o zmianach.",
+                yeslabel="Tak, dopisz ID",
+                nolabel="Anuluj"
+            ):
+                return
+            result = assign_sudosync_ids()
+            xbmcgui.Dialog().ok(
+                "SudoSync",
+                "Zmodyfikowano:\nFilmy: {}\nOdcinki: {}".format(result.get("movies", 0), result.get("episodes", 0))
+            )
         else:
             show_status()
     except Exception as exc:

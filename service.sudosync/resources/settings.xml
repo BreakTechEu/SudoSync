@@ -62,6 +62,34 @@
           <control type="button" format="action"><close>false</close></control>
         </setting>
       </group>
+      <group id="6" label="32060">
+        <setting id="sudosync_id_enabled" type="boolean" label="32061" help="32062">
+          <level>0</level>
+          <default>false</default>
+          <control type="toggle"/>
+        </setting>
+        <setting id="sudosync_id_prefix" type="string" label="32063" help="32064">
+          <level>0</level>
+          <default/>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="edit" format="string"><heading>32063</heading></control>
+          <dependencies>
+            <dependency type="enable">
+              <condition operator="is" setting="sudosync_id_enabled">true</condition>
+            </dependency>
+          </dependencies>
+        </setting>
+        <setting id="assign_sudosync_ids" type="action" label="32065" help="32066">
+          <level>0</level>
+          <data>RunScript(service.sudosync,assignids)</data>
+          <control type="button" format="action"><close>false</close></control>
+          <dependencies>
+            <dependency type="enable">
+              <condition operator="is" setting="sudosync_id_enabled">true</condition>
+            </dependency>
+          </dependencies>
+        </setting>
+      </group>
       <group id="4" label="32040">
         <setting id="select_initial_base" type="action" label="32045" help="32046">
           <level>0</level>

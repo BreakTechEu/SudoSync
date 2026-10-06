@@ -175,6 +175,24 @@ def addon_settings():
     except Exception:
         live_poll = 60
     live_poll = min(600, max(30, live_poll))
+    
+    sudosync_id_enabled = addon.getSetting("sudosync_id_enabled").strip().lower() == "true"
+    sudosync_id_prefix = addon.getSetting("sudosync_id_prefix").strip()
+    if not sudosync_id_prefix and base.startswith("smb://"):
+        try:
+            host = base.split("://")[1].split("/")[0].upper()
+            sudosync_id_prefix = host
+        except Exception:
+            pass
+    elif not sudosync_id_prefix and base.startswith("nfs://"):
+        try:
+            host = base.split("://")[1].split("/")[0]
+            sudosync_id_prefix = host
+        except Exception:
+            pass
+    if not sudosync_id_prefix:
+        sudosync_id_prefix = "LOCAL"
+
     return {
         "base_path": base,
         "client_name": name,
@@ -184,6 +202,8 @@ def addon_settings():
         "auto_install_updates": auto_install_updates,
         "live_sync_enabled": live_sync_enabled,
         "live_poll_seconds": live_poll,
+        "sudosync_id_enabled": sudosync_id_enabled,
+        "sudosync_id_prefix": sudosync_id_prefix,
     }
 
 
@@ -2058,3 +2078,75 @@ def apply_initial_sync(show_notification=False):
         "post_plan": post_plan or {},
         "initialization_completed": initialization_completed,
     }
+
+import hashlib
+
+def assign_sudosync_ids(show_notification=True):
+    settings = addon_settings()
+    if not settings.get("sudosync_id_enabled"):
+        raise RuntimeError("Generowanie SudoSync ID jest wyłączone w ustawieniach.")
+
+    movies, episodes = collect_library(first_import=False)
+    prefix = settings.get("sudosync_id_prefix") or "LOCAL"
+    modified_movies = 0
+    modified_episodes = 0
+
+    def _process_item(item, kind):
+        if item.get("ids"):
+            return False
+        file_path = item.get("file")
+        if not file_path:
+            return False
+        nfo_candidates = _nfo_candidates(file_path, kind)
+        for path in nfo_candidates:
+            if not xbmcvfs.exists(path):
+                continue
+            text = _read_vfs_text(path)
+            if not text:
+                continue
+            try:
+                root = ET.fromstring(text)
+            except Exception:
+                continue
+
+            # Sprawdź ponownie, czy czasem nie ma żadnego id, ale SudoSync nie załapał bo parsowanie uproszczone
+            existing = root.findall("uniqueid")
+            if existing:
+                continue
+
+            item_id = hashlib.md5(file_path.encode("utf-8")).hexdigest()[:12]
+            full_id = "{}-{}".format(prefix, item_id)
+
+            uniqueid_node = ET.Element("uniqueid", type="sudosync", default="true")
+            uniqueid_node.text = full_id
+            root.append(uniqueid_node)
+
+            try:
+                new_xml = ET.tostring(root, encoding="utf-8").decode("utf-8")
+                if text.startswith("\ufeff"):
+                    new_xml = "\ufeff" + new_xml
+                _write_vfs_bytes(path, new_xml)
+            except Exception as exc:
+                log("Błąd zapisu SudoSync ID do {}: {}".format(path, exc), xbmc.LOGWARNING)
+                return False
+
+            try:
+                if kind == "movie":
+                    rpc("VideoLibrary.RefreshMovie", {"movieid": item.get("local", {}).get("movieid")})
+                else:
+                    rpc("VideoLibrary.RefreshEpisode", {"episodeid": item.get("local", {}).get("episodeid")})
+            except Exception:
+                pass
+            return True
+        return False
+
+    for m in movies:
+        if _process_item(m, "movie"):
+            modified_movies += 1
+
+    for e in episodes:
+        if _process_item(e, "episode"):
+            modified_episodes += 1
+
+    return {"movies": modified_movies, "episodes": modified_episodes}
+
