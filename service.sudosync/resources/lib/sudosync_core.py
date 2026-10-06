@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-from __future__ import absolute_import, division, print_function
-
 import json
 import os
 import re
@@ -264,14 +261,33 @@ def update_shared_config(mutator_func, base_path=None):
     
     path = _shared_config_path(base)
     lock_dir = path + ".lockdir"
-    import time
+    lock_info_path = lock_dir + "/lock_info.json"
+    my_client_id = get_or_create_client_id()
     
     locked = False
     start = datetime.now(timezone.utc).timestamp()
     while True:
         if xbmcvfs.mkdirs(lock_dir):
+            _write_vfs_json(lock_info_path, {"client_id": my_client_id, "timestamp": datetime.now(timezone.utc).timestamp()})
             locked = True
             break
+            
+        now_ts = datetime.now(timezone.utc).timestamp()
+        try:
+            info = _read_vfs_json(lock_info_path) or {}
+        except Exception:
+            info = {}
+            
+        lock_ts = float(info.get("timestamp") or 0.0)
+        if now_ts - lock_ts > 60.0:
+            log("Znaleziono osierocona blokade. Usuwanie...")
+            try:
+                xbmcvfs.delete(lock_info_path)
+                xbmcvfs.rmdir(lock_dir)
+            except Exception:
+                pass
+            continue
+            
         if datetime.now(timezone.utc).timestamp() - start > 15.0:
             raise RuntimeError(
                 "Nie można uzyskać blokady wspólnej konfiguracji SudoSync w ciągu 15 sekund."
@@ -311,6 +327,7 @@ def update_shared_config(mutator_func, base_path=None):
     finally:
         if locked:
             try:
+                xbmcvfs.delete(lock_info_path)
                 xbmcvfs.rmdir(lock_dir)
             except Exception:
                 pass
@@ -817,8 +834,15 @@ def _find_best_nfo(media_file, kind):
             
     return first_existing or (candidates[0] if candidates else None), {}, ""
 
+_NFO_ID_CACHE = {}
+
 def _ids_from_nfo(media_file, kind):
+    if not media_file:
+        return {}
+    if media_file in _NFO_ID_CACHE:
+        return _NFO_ID_CACHE[media_file]
     _, ids, _ = _find_best_nfo(media_file, kind)
+    _NFO_ID_CACHE[media_file] = ids
     return ids
 
 
@@ -1613,8 +1637,15 @@ def collect_and_write(show_notification=False):
 
 def _snapshots_ready_for_live(snapshots):
     not_ready = []
+    now_ts = datetime.now(timezone.utc).timestamp()
     for snap in snapshots:
         client = snap.get("client") if isinstance(snap.get("client"), dict) else {}
+        pulse_epoch = float(client.get("pulse_epoch") or 0.0)
+        file_mtime = float(snap.get("mtime") or 0.0)
+        
+        if now_ts - file_mtime > 14 * 86400 or now_ts - pulse_epoch > 7 * 86400:
+            continue
+            
         if snap.get("mode") != "live" or _safe_int(snap.get("live_schema_version"), 0) < LIVE_SCHEMA_VERSION:
             not_ready.append(str(client.get("name") or client.get("id") or "Kodi"))
     return not_ready
@@ -1986,6 +2017,11 @@ def read_remote_snapshots(base_path=None):
             if error:
                 errors.append({"file": filename, "error": error})
                 continue
+            try:
+                st = xbmcvfs.Stat(path)
+                data["mtime"] = st.st_mtime()
+            except Exception:
+                pass
             snapshots.append(data)
         except Exception as exc:
             errors.append({"file": filename, "error": str(exc)})
@@ -2338,17 +2374,23 @@ def get_or_sync_network_id_and_alias(base_path=None):
     network_id = config.get("sudosync_network_id")
     if not network_id:
         if local_prefix:
-            network_id = local_prefix
+            generated_id = local_prefix
         else:
             import random, string
-            network_id = "NET-" + "".join(random.choice(string.ascii_uppercase + string.digits) for _ in range(4))
+            generated_id = "NET-" + "".join(random.choice(string.ascii_uppercase + string.digits) for _ in range(4))
+        
         def mutator1(cfg):
-            cfg["sudosync_network_id"] = network_id
-            cfg["sudosync_network_alias"] = local_prefix or network_id
-            cfg["sudosync_network_alias_ts"] = utc_now()
-            return True
+            if not cfg.get("sudosync_network_id"):
+                cfg["sudosync_network_id"] = generated_id
+                cfg["sudosync_network_alias"] = local_prefix or generated_id
+                cfg["sudosync_network_alias_ts"] = utc_now()
+                return True
+            return False
+            
         update_shared_config(mutator1, base)
-        alias = local_prefix or network_id
+        config = read_shared_config(base)
+        network_id = config.get("sudosync_network_id") or generated_id
+        alias = config.get("sudosync_network_alias") or local_prefix or network_id
         addon.setSetting("sudosync_id_prefix", alias)
         addon.setSetting("sudosync_id_prefix_last_synced", alias)
         return network_id
@@ -2398,9 +2440,7 @@ def assign_sudosync_ids(show_notification=True):
                 
         if xbmcvfs.exists(best_path):
             try:
-                f = xbmcvfs.File(best_path)
-                raw = f.readBytes(256 * 1024)
-                f.close()
+                raw = _read_vfs_all(best_path)
                 if not raw:
                     return False
                 if isinstance(raw, str):
@@ -2425,8 +2465,18 @@ def assign_sudosync_ids(show_notification=True):
                 _write_vfs_bytes(new_path, new_raw)
                 if xbmcvfs.exists(bak_path):
                     xbmcvfs.delete(bak_path)
-                xbmcvfs.rename(best_path, bak_path)
-                xbmcvfs.rename(new_path, best_path)
+                
+                success_bak = xbmcvfs.rename(best_path, bak_path)
+                success_new = xbmcvfs.rename(new_path, best_path)
+                
+                if not success_new:
+                    if success_bak:
+                        xbmcvfs.rename(bak_path, best_path)
+                    log("Blad przenoszenia nowej wersji pliku: {}".format(best_path), xbmc.LOGWARNING)
+                    if xbmcvfs.exists(new_path):
+                        xbmcvfs.delete(new_path)
+                    return False
+                
                 if xbmcvfs.exists(new_path):
                     xbmcvfs.delete(new_path)
 
