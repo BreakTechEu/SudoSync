@@ -23,6 +23,7 @@ DRY_RUN_REPORT_SCHEMA = 2
 LIVE_SCHEMA_VERSION = 1
 LIVE_FIELDS = ("playcount", "lastplayed", "userrating", "resume")
 RATING_IMPORT_WHITELIST = {6, 7, 8}
+_LIVE_LOCK_HANDLE = None
 UPDATE_ZIP_RE = re.compile(r"^service[._]sudosync[_-](\d+)[._](\d+)[._](\d+)(?:-([A-Za-z0-9._-]+))?\.zip$", re.IGNORECASE)
 
 
@@ -272,8 +273,9 @@ def update_shared_config(mutator_func, base_path=None):
             locked = True
             break
         if datetime.now(timezone.utc).timestamp() - start > 15.0:
-            locked = True
-            break
+            raise RuntimeError(
+                "Nie można uzyskać blokady wspólnej konfiguracji SudoSync w ciągu 15 sekund."
+            )
         xbmc.sleep(200)
 
     try:
@@ -1018,7 +1020,7 @@ def _collect_initial_snapshot(show_notification=False):
 
 
 
-ZERO_VERSION = {"ts": "0001-01-01T00:00:00.000Z", "client_id": "", "seq": 0}
+ZERO_VERSION = {"lc": 0, "ts": "0001-01-01T00:00:00.000Z", "client_id": "", "seq": 0}
 
 
 def _live_registry_file():
@@ -1074,7 +1076,7 @@ def _baseline_version(initialization):
     stamp = str((initialization or {}).get("completed_at") or (initialization or {}).get("selected_at") or "1970-01-01T00:00:00.000Z")
     if stamp.endswith("Z") and "." not in stamp:
         stamp = stamp[:-1] + ".000Z"
-    return {"ts": stamp, "client_id": "baseline", "seq": 0}
+    return {"lc": 0, "ts": stamp, "client_id": "baseline", "seq": 0}
 
 
 def _read_live_registry(client_id, initialization):
@@ -1105,33 +1107,91 @@ def _next_live_version(registry, client_id):
     return {"lc": registry["lc"], "ts": utc_now_precise(), "client_id": client_id, "seq": registry["seq"]}
 
 
+def _try_os_file_lock(fd):
+    """Acquire a non-blocking advisory OS lock on an already-created file."""
+    try:
+        if os.name == "nt":
+            import msvcrt
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except (OSError, IOError):
+        return False
+
+
+def _unlock_os_file(fd):
+    try:
+        if os.name == "nt":
+            import msvcrt
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    except (OSError, IOError):
+        pass
+
+
 def _acquire_live_lock(max_age_seconds=180):
+    """Acquire the local LIVE lock using an OS advisory lock.
+
+    The lock file is intentionally persistent. The OS releases the advisory lock
+    automatically when Kodi/process exits, so a crashed process cannot strand a
+    stale path that later clients must blindly delete.
+    """
+    global _LIVE_LOCK_HANDLE
+    if _LIVE_LOCK_HANDLE is not None:
+        return False
+
     path = _live_lock_file()
     now = datetime.now(timezone.utc).timestamp()
+    fd = None
     try:
-        if os.path.exists(path):
-            try:
-                old = json.load(open(path, "r", encoding="utf-8"))
-                started = float(old.get("started_epoch") or 0)
-                if now - started > max_age_seconds:
-                    os.remove(path)
-            except Exception:
-                os.remove(path)
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump({"locked": True, "started_epoch": now, "started_at": utc_now_precise()}, f)
+        fd = os.open(path, os.O_CREAT | os.O_RDWR)
+        payload = json.dumps({
+            "locked": True,
+            "started_epoch": now,
+            "started_at": utc_now_precise(),
+            "pid": os.getpid(),
+        })
+        os.ftruncate(fd, 0)
+        os.write(fd, payload.encode("utf-8"))
+        os.lseek(fd, 0, os.SEEK_SET)
+
+        # Ensure a one-byte region exists for Windows msvcrt locking.
+        if os.path.getsize(path) == 0:
+            os.write(fd, b" ")
+            os.lseek(fd, 0, os.SEEK_SET)
+
+        if not _try_os_file_lock(fd):
+            os.close(fd)
+            return False
+
+        _LIVE_LOCK_HANDLE = fd
         return True
-    except OSError:
+    except (OSError, IOError):
+        if fd is not None:
+            try:
+                os.close(fd)
+            except Exception:
+                pass
         return False
 
 
 def _release_live_lock():
+    global _LIVE_LOCK_HANDLE
+    fd = _LIVE_LOCK_HANDLE
+    _LIVE_LOCK_HANDLE = None
+    if fd is None:
+        return
+    _unlock_os_file(fd)
     try:
-        path = _live_lock_file()
-        if os.path.exists(path):
-            os.remove(path)
+        os.close(fd)
     except Exception as exc:
-        log("Cannot remove live cycle lock: {}".format(exc), xbmc.LOGWARNING)
+        log("Cannot close live cycle lock: {}".format(exc), xbmc.LOGWARNING)
 
 
 def _live_backup_path(base_path, client_name, client_id):
@@ -1599,11 +1659,45 @@ def _accept_remote_into_registry(item):
     _write_local_json(_live_registry_file(), registry)
 
 
+def _observe_remote_lamport(snapshots, client_id, initialization):
+    """Advance the local Lamport clock from every observed remote field version."""
+    registry = _read_live_registry(client_id, initialization)
+    current_lc = _safe_int(registry.get("lc"), 0)
+    max_remote_lc = current_lc
+
+    for snapshot in snapshots:
+        if not isinstance(snapshot, dict):
+            continue
+        for collection in ("movies", "episodes"):
+            records = snapshot.get(collection) if isinstance(snapshot.get(collection), list) else []
+            for record in records:
+                versions = record.get("field_versions") if isinstance(record, dict) else {}
+                if not isinstance(versions, dict):
+                    continue
+                for version in versions.values():
+                    if isinstance(version, dict):
+                        max_remote_lc = max(max_remote_lc, _safe_int(version.get("lc"), 0))
+
+    if max_remote_lc > current_lc:
+        registry["lc"] = max_remote_lc
+        registry["updated_at"] = utc_now_precise()
+        _write_local_json(_live_registry_file(), registry)
+
+    return registry
+
+
 def build_live_report(show_notification=False, collect_first=True, suppress_local_changes=False, notify_local_changes=False):
     settings = addon_settings()
     if collect_first:
         collect_live_snapshot(show_notification=False, suppress_local_changes=suppress_local_changes, notify_local_changes=notify_local_changes)
     snapshots, errors = read_remote_snapshots(settings["base_path"])
+    client_id = get_or_create_client_id()
+    shared_for_lamport = read_shared_config(settings["base_path"])
+    _observe_remote_lamport(
+        snapshots,
+        client_id,
+        shared_for_lamport.get("initialization") or {},
+    )
     if len(snapshots) < 2:
         raise RuntimeError("Synchronizacja bieżąca wymaga co najmniej dwóch poprawnych snapshotów.")
     waiting = _snapshots_ready_for_live(snapshots)
@@ -1842,6 +1936,33 @@ def _read_vfs_json(path):
     return json.loads(raw.decode("utf-8-sig", errors="strict"))
 
 
+def _validate_remote_snapshot(data):
+    """Validate the actual SudoSync client snapshot schema used on NAS."""
+    if not isinstance(data, dict):
+        return "not a JSON dictionary"
+    if data.get("format") != "SudoSync client snapshot":
+        return "not a SudoSync client snapshot"
+    if _safe_int(data.get("schema_version"), 0) < 1:
+        return "unsupported schema_version"
+
+    client = data.get("client")
+    if not isinstance(client, dict):
+        return "missing or invalid client payload"
+    client_id = client.get("id")
+    if not isinstance(client_id, str) or len(client_id) < 10:
+        return "missing or invalid client.id"
+
+    for collection in ("movies", "episodes"):
+        values = data.get(collection)
+        if not isinstance(values, list):
+            return "missing or invalid {} collection".format(collection)
+        for index, record in enumerate(values):
+            if not isinstance(record, dict):
+                return "invalid {} record at index {}".format(collection, index)
+
+    return None
+
+
 def read_remote_snapshots(base_path=None):
     settings = addon_settings()
     base = (base_path or settings["base_path"]).rstrip("/") + "/"
@@ -1861,21 +1982,9 @@ def read_remote_snapshots(base_path=None):
         path = clients_path + filename
         try:
             data = _read_vfs_json(path)
-            if not isinstance(data, dict):
-                errors.append({"file": filename, "error": "not a JSON dictionary"})
-                continue
-            if data.get("format") != "SudoSync client snapshot":
-                errors.append({"file": filename, "error": "not a SudoSync client snapshot"})
-                continue
-            if int(data.get("schema_version") or 0) < 1:
-                errors.append({"file": filename, "error": "unsupported schema_version"})
-                continue
-            if not isinstance(data.get("client_id"), str) or len(data.get("client_id")) < 10:
-                errors.append({"file": filename, "error": "missing or invalid client_id"})
-                continue
-            state = data.get("state")
-            if not isinstance(state, dict) or not isinstance(state.get("records"), dict):
-                errors.append({"file": filename, "error": "missing or invalid state payload"})
+            error = _validate_remote_snapshot(data)
+            if error:
+                errors.append({"file": filename, "error": error})
                 continue
             snapshots.append(data)
         except Exception as exc:
@@ -2230,8 +2339,9 @@ def get_or_sync_network_id_and_alias(base_path=None):
             cfg["sudosync_network_alias_ts"] = utc_now()
             return True
         update_shared_config(mutator1, base)
-        addon.setSetting("sudosync_id_prefix", config["sudosync_network_alias"])
-        addon.setSetting("sudosync_id_prefix_last_synced", config["sudosync_network_alias"])
+        alias = local_prefix or network_id
+        addon.setSetting("sudosync_id_prefix", alias)
+        addon.setSetting("sudosync_id_prefix_last_synced", alias)
         return network_id
         
     shared_alias = config.get("sudosync_network_alias", "")
