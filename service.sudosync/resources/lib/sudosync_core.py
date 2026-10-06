@@ -1443,6 +1443,8 @@ def collect_live_snapshot(show_notification=False, suppress_local_changes=False,
 def collect_and_write(show_notification=False):
     """Collect an initial-import snapshot before convergence, live snapshot after it."""
     try:
+        # Sync our settings alias quietly in the background
+        get_or_sync_network_id_and_alias()
         initialization = (read_shared_config().get("initialization") or {})
     except Exception:
         initialization = {}
@@ -1540,6 +1542,11 @@ def build_live_report(show_notification=False, collect_first=True, suppress_loca
 def run_live_sync_cycle(show_notification=False, suppress_local_changes=False, collect_local=True, skip_if_no_remote_change=False, notify_local_changes=False, receiver_notification_delay_ms=0):
     """Run one complete peer synchronization cycle on THIS Kodi only."""
     settings = addon_settings()
+    # Sync our settings alias quietly in the background
+    try:
+        get_or_sync_network_id_and_alias(settings["base_path"])
+    except Exception:
+        pass
     shared = read_shared_config(settings["base_path"])
     initialization = shared.get("initialization") or {}
     if not initialization.get("completed", False):
@@ -2081,15 +2088,42 @@ def apply_initial_sync(show_notification=False):
 
 import hashlib
 
-def get_shared_network_prefix(base_path=None):
-    config = read_shared_config(base_path)
-    prefix = config.get("sudosync_network_prefix")
-    if not prefix:
-        import random, string
-        prefix = "NET-" + "".join(random.choice(string.ascii_uppercase + string.digits) for _ in range(4))
-        config["sudosync_network_prefix"] = prefix
-        write_shared_config(config, base_path)
-    return prefix
+def get_or_sync_network_id_and_alias(base_path=None):
+    addon = xbmcaddon.Addon(ADDON_ID)
+    settings = addon_settings()
+    base = base_path or settings["base_path"]
+    config = read_shared_config(base)
+    
+    local_prefix = addon.getSetting("sudosync_id_prefix").strip()
+    last_synced = addon.getSetting("sudosync_id_prefix_last_synced").strip()
+    
+    network_id = config.get("sudosync_network_id")
+    if not network_id:
+        if local_prefix:
+            network_id = local_prefix
+        else:
+            import random, string
+            network_id = "NET-" + "".join(random.choice(string.ascii_uppercase + string.digits) for _ in range(4))
+        config["sudosync_network_id"] = network_id
+        config["sudosync_network_alias"] = local_prefix or network_id
+        config["sudosync_network_alias_ts"] = utc_now()
+        write_shared_config(config, base)
+        addon.setSetting("sudosync_id_prefix", config["sudosync_network_alias"])
+        addon.setSetting("sudosync_id_prefix_last_synced", config["sudosync_network_alias"])
+        return network_id
+        
+    shared_alias = config.get("sudosync_network_alias", "")
+    
+    if local_prefix != last_synced:
+        config["sudosync_network_alias"] = local_prefix
+        config["sudosync_network_alias_ts"] = utc_now()
+        write_shared_config(config, base)
+        addon.setSetting("sudosync_id_prefix_last_synced", local_prefix)
+    elif shared_alias != local_prefix:
+        addon.setSetting("sudosync_id_prefix", shared_alias)
+        addon.setSetting("sudosync_id_prefix_last_synced", shared_alias)
+        
+    return network_id
 
 def assign_sudosync_ids(show_notification=True):
     settings = addon_settings()
@@ -2097,9 +2131,7 @@ def assign_sudosync_ids(show_notification=True):
         raise RuntimeError("Generowanie SudoSync ID jest wyłączone w ustawieniach.")
 
     movies, episodes = collect_library(first_import=False)
-    prefix = settings.get("sudosync_id_prefix")
-    if not prefix:
-        prefix = get_shared_network_prefix(settings["base_path"])
+    prefix = get_or_sync_network_id_and_alias(settings["base_path"])
         
     modified_movies = 0
     modified_episodes = 0

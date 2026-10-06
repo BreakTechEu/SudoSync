@@ -79,6 +79,10 @@
             </dependency>
           </dependencies>
         </setting>
+        <setting id="sudosync_id_prefix_last_synced" type="string" visible="false">
+          <level>0</level>
+          <default/>
+        </setting>
         <setting id="assign_sudosync_ids" type="action" label="32065" help="32066">
           <level>0</level>
           <data>RunScript(service.sudosync,assignids)</data>

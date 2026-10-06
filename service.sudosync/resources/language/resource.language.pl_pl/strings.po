@@ -185,12 +185,12 @@ msgid "Allows creating a custom ID for media not present in online databases."
 msgstr "Pozwala tworzyć własne ID dla wideo niewystępujących w bazach online."
 
 msgctxt "#32063"
-msgid "Network Prefix (leave empty for auto)"
-msgstr "Prefiks sieci (puste = auto)"
+msgid "Network Name / Prefix (leave empty for auto)"
+msgstr "Nazwa sieci / Prefiks (puste = auto)"
 
 msgctxt "#32064"
-msgid "Custom network identifier to prevent conflicts when moving files."
-msgstr "Własny identyfikator sieci zapobiegający konfliktom przy przenoszeniu plików."
+msgid "Friendly name for the network. The internal NFO ID is generated once and remains permanent even if you rename this."
+msgstr "Przyjazna nazwa. Wewnętrzny identyfikator w plikach NFO jest generowany raz i pozostanie niezmienny mimo zmiany tej nazwy."
 
 msgctxt "#32065"
 msgid "Assign SudoSync IDs to all video items in the library"
