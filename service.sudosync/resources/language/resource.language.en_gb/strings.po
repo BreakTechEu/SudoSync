@@ -193,8 +193,8 @@ msgid "Custom network identifier to prevent conflicts when moving files."
 msgstr "Custom network identifier to prevent conflicts when moving files."
 
 msgctxt "#32065"
-msgid "Assign SudoSync IDs to library items"
-msgstr "Assign SudoSync IDs to library items"
+msgid "Assign SudoSync IDs to all video items in the library"
+msgstr "Assign SudoSync IDs to all video items in the library"
 
 msgctxt "#32066"
 msgid "Injects SudoSync IDs to all items in Kodi library missing a standard ID."

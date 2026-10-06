@@ -2081,13 +2081,26 @@ def apply_initial_sync(show_notification=False):
 
 import hashlib
 
+def get_shared_network_prefix(base_path=None):
+    config = read_shared_config(base_path)
+    prefix = config.get("sudosync_network_prefix")
+    if not prefix:
+        import random, string
+        prefix = "NET-" + "".join(random.choice(string.ascii_uppercase + string.digits) for _ in range(4))
+        config["sudosync_network_prefix"] = prefix
+        write_shared_config(config, base_path)
+    return prefix
+
 def assign_sudosync_ids(show_notification=True):
     settings = addon_settings()
     if not settings.get("sudosync_id_enabled"):
         raise RuntimeError("Generowanie SudoSync ID jest wyłączone w ustawieniach.")
 
     movies, episodes = collect_library(first_import=False)
-    prefix = settings.get("sudosync_id_prefix") or "LOCAL"
+    prefix = settings.get("sudosync_id_prefix")
+    if not prefix:
+        prefix = get_shared_network_prefix(settings["base_path"])
+        
     modified_movies = 0
     modified_episodes = 0
 
@@ -2098,47 +2111,56 @@ def assign_sudosync_ids(show_notification=True):
         if not file_path:
             return False
         nfo_candidates = _nfo_candidates(file_path, kind)
+        
+        item_id = hashlib.md5(file_path.encode("utf-8")).hexdigest()[:12]
+        full_id = "{}-{}".format(prefix, item_id)
+        
+        existing_path = None
         for path in nfo_candidates:
-            if not xbmcvfs.exists(path):
-                continue
-            text = _read_vfs_text(path)
+            if xbmcvfs.exists(path):
+                existing_path = path
+                break
+                
+        if existing_path:
+            text = _read_vfs_text(existing_path)
             if not text:
-                continue
+                return False
             try:
                 root = ET.fromstring(text)
-            except Exception:
-                continue
-
-            # Sprawdź ponownie, czy czasem nie ma żadnego id, ale SudoSync nie załapał bo parsowanie uproszczone
-            existing = root.findall("uniqueid")
-            if existing:
-                continue
-
-            item_id = hashlib.md5(file_path.encode("utf-8")).hexdigest()[:12]
-            full_id = "{}-{}".format(prefix, item_id)
-
-            uniqueid_node = ET.Element("uniqueid", type="sudosync", default="true")
-            uniqueid_node.text = full_id
-            root.append(uniqueid_node)
-
-            try:
+                existing = root.findall("uniqueid")
+                if existing:
+                    return False
+                uniqueid_node = ET.Element("uniqueid", type="sudosync", default="true")
+                uniqueid_node.text = full_id
+                root.append(uniqueid_node)
                 new_xml = ET.tostring(root, encoding="utf-8").decode("utf-8")
                 if text.startswith("\ufeff"):
                     new_xml = "\ufeff" + new_xml
-                _write_vfs_bytes(path, new_xml)
+                _write_vfs_bytes(existing_path, new_xml)
+                _refresh_item(item, kind)
+                return True
+            except Exception:
+                return False
+        else:
+            primary_path = nfo_candidates[0]
+            root_tag = "movie" if kind == "movie" else "episodedetails"
+            xml_content = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<{root}><uniqueid type="sudosync" default="true">{id}</uniqueid></{root}>\n'.format(root=root_tag, id=full_id)
+            try:
+                _write_vfs_bytes(primary_path, xml_content)
+                _refresh_item(item, kind)
+                return True
             except Exception as exc:
-                log("Błąd zapisu SudoSync ID do {}: {}".format(path, exc), xbmc.LOGWARNING)
+                log("Błąd tworzenia NFO dla {}: {}".format(primary_path, exc), xbmc.LOGWARNING)
                 return False
 
-            try:
-                if kind == "movie":
-                    rpc("VideoLibrary.RefreshMovie", {"movieid": item.get("local", {}).get("movieid")})
-                else:
-                    rpc("VideoLibrary.RefreshEpisode", {"episodeid": item.get("local", {}).get("episodeid")})
-            except Exception:
-                pass
-            return True
-        return False
+    def _refresh_item(item, kind):
+        try:
+            if kind == "movie":
+                rpc("VideoLibrary.RefreshMovie", {"movieid": item.get("local", {}).get("movieid")})
+            else:
+                rpc("VideoLibrary.RefreshEpisode", {"episodeid": item.get("local", {}).get("episodeid")})
+        except Exception:
+            pass
 
     for m in movies:
         if _process_item(m, "movie"):

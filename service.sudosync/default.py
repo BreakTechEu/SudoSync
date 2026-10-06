@@ -462,15 +462,21 @@ def main():
                 return
             if not xbmcgui.Dialog().yesno(
                 "SudoSync — własne identyfikatory",
-                "Czy na pewno chcesz nadpisać pliki .nfo bez standardowego ID? Kodi zostanie poinformowane o zmianach.",
+                "Czy na pewno chcesz nadpisać lub utworzyć pliki .nfo dla WSZYSTKICH pozycji bez standardowego ID?\n\nOstrzeżenie: przy dużej bibliotece pierwsze wykonanie może zająć dłuższą chwilę. Kodi zostanie poinformowane o zmianach.",
                 yeslabel="Tak, dopisz ID",
                 nolabel="Anuluj"
             ):
                 return
+            xbmcgui.Dialog().notification(
+                "SudoSync",
+                "Przypisuję identyfikatory. Może to potrwać dłuższą chwilę...",
+                xbmcgui.NOTIFICATION_INFO,
+                10000
+            )
             result = assign_sudosync_ids()
             xbmcgui.Dialog().ok(
                 "SudoSync",
-                "Zmodyfikowano:\nFilmy: {}\nOdcinki: {}".format(result.get("movies", 0), result.get("episodes", 0))
+                "Zmodyfikowano lub utworzono:\nFilmy: {}\nOdcinki: {}".format(result.get("movies", 0), result.get("episodes", 0))
             )
         else:
             show_status()
