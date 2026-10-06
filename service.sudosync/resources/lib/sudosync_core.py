@@ -23,7 +23,7 @@ DRY_RUN_REPORT_SCHEMA = 2
 LIVE_SCHEMA_VERSION = 1
 LIVE_FIELDS = ("playcount", "lastplayed", "userrating", "resume")
 RATING_IMPORT_WHITELIST = {6, 7, 8}
-UPDATE_ZIP_RE = re.compile(r"^service\.sudosync-(\d+)\.(\d+)\.(\d+)(?:-([A-Za-z0-9._-]+))?\.zip$", re.IGNORECASE)
+UPDATE_ZIP_RE = re.compile(r"^service[._]sudosync[_-](\d+)[._](\d+)[._](\d+)(?:-([A-Za-z0-9._-]+))?\.zip$", re.IGNORECASE)
 
 
 def log(message, level=xbmc.LOGINFO):
@@ -217,15 +217,22 @@ def read_shared_config(base_path=None):
     base = (base_path or settings["base_path"]).rstrip("/") + "/"
     path = _shared_config_path(base)
     if not xbmcvfs.exists(path):
-        return {
-            "format": "SudoSync shared config",
-            "schema_version": 1,
-            "initialization": {
-                "completed": False,
-                "base_client_id": "",
-                "base_client_name": "",
-            },
-        }
+        import xbmc
+        xbmc.sleep(200)
+        if not xbmcvfs.exists(path):
+            bak = path + ".bak"
+            if xbmcvfs.exists(bak):
+                path = bak
+            else:
+                return {
+                    "format": "SudoSync shared config",
+                    "schema_version": 1,
+                    "initialization": {
+                        "completed": False,
+                        "base_client_id": "",
+                        "base_client_name": "",
+                    },
+                }
     try:
         data = _read_vfs_json(path)
         if not isinstance(data, dict):
@@ -464,12 +471,14 @@ def _safe_zip_member(name):
 def _validate_update_zip(zip_path, expected_version=None):
     with zipfile.ZipFile(zip_path, "r") as zf:
         names = zf.namelist()
-        if not names or not all(_safe_zip_member(name) for name in names if name and not name.endswith("/")):
+        normalized_map = {str(name or "").replace("\\", "/"): name for name in names}
+        if not names or not all(_safe_zip_member(name) for name in normalized_map.keys() if name and not name.endswith("/")):
             raise ValueError("Pakiet ZIP ma nieprawidłową strukturę lub zawiera niedozwoloną ścieżkę.")
         manifest_name = ADDON_ID + "/addon.xml"
-        if manifest_name not in names:
+        if manifest_name not in normalized_map:
             raise ValueError("Pakiet nie zawiera {}.".format(manifest_name))
-        manifest = ET.fromstring(zf.read(manifest_name))
+        actual_name = normalized_map[manifest_name]
+        manifest = ET.fromstring(zf.read(actual_name))
         if manifest.tag != "addon" or manifest.attrib.get("id") != ADDON_ID:
             raise ValueError("To nie jest pakiet SudoSync.")
         version = manifest.attrib.get("version") or "0.0.0"
@@ -2154,29 +2163,50 @@ def assign_sudosync_ids(show_notification=True):
                 break
                 
         if existing_path:
-            text = _read_vfs_text(existing_path)
-            if not text:
-                return False
             try:
-                root = ET.fromstring(text)
-                existing = root.findall("uniqueid")
-                if existing:
+                f = xbmcvfs.File(existing_path)
+                raw = f.readBytes(256 * 1024)
+                f.close()
+                if not raw:
                     return False
-                uniqueid_node = ET.Element("uniqueid", type="sudosync", default="true")
-                uniqueid_node.text = full_id
-                root.append(uniqueid_node)
-                new_xml = ET.tostring(root, encoding="utf-8").decode("utf-8")
-                if text.startswith("\ufeff"):
-                    new_xml = "\ufeff" + new_xml
-                _write_vfs_bytes(existing_path, new_xml)
+                if isinstance(raw, str):
+                    raw = raw.encode("utf-8")
+                else:
+                    raw = bytearray(raw)
+
+                if b"<uniqueid" in raw.lower():
+                    return False
+
+                closing_tag = b"</movie>" if kind == "movie" else b"</episodedetails>"
+                pos = raw.lower().rfind(closing_tag)
+                if pos < 0:
+                    return False
+
+                insert = ('    <uniqueid type="sudosync" default="true">' + full_id + '</uniqueid>\n').encode("utf-8")
+                new_raw = raw[:pos] + insert + raw[pos:]
+
+                bak_path = existing_path + ".bak"
+                new_path = existing_path + ".new"
+
+                _write_vfs_bytes(new_path, new_raw)
+                if xbmcvfs.exists(bak_path):
+                    xbmcvfs.delete(bak_path)
+                xbmcvfs.rename(existing_path, bak_path)
+                xbmcvfs.rename(new_path, existing_path)
+                if xbmcvfs.exists(new_path):
+                    xbmcvfs.delete(new_path)
+
                 _refresh_item(item, kind)
                 return True
-            except Exception:
+            except Exception as exc:
+                log("Błąd zapisu NFO dla {}: {}".format(existing_path, exc), xbmc.LOGWARNING)
                 return False
         else:
             primary_path = nfo_candidates[0]
             root_tag = "movie" if kind == "movie" else "episodedetails"
-            xml_content = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<{root}><uniqueid type="sudosync" default="true">{id}</uniqueid></{root}>\n'.format(root=root_tag, id=full_id)
+            title = item.get("title") or item.get("originaltitle") or "Nieznany"
+            title = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            xml_content = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<{root}>\n  <title>{title}</title>\n  <uniqueid type="sudosync" default="true">{id}</uniqueid>\n</{root}>\n'.format(root=root_tag, id=full_id, title=title)
             try:
                 _write_vfs_bytes(primary_path, xml_content)
                 _refresh_item(item, kind)
