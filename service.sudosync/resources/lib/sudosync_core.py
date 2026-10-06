@@ -297,7 +297,7 @@ def update_shared_config(mutator_func, base_path=None):
                 },
             }
             
-        current_rev = data.get("revision", 0)
+        current_rev = _safe_int(data.get("revision"), 0)
         
         changed = mutator_func(data)
         if changed is False:
@@ -2204,9 +2204,17 @@ def apply_initial_sync(show_notification=False):
     items = (report.get("planned_changes") or {}).get(client_id) or []
     counts = _planned_fields_count(items)
     if not items:
+        # A new client can legitimately have nothing to apply. That still means
+        # its enrollment is complete: it has published a fresh LIVE snapshot and
+        # the current state is already converged.
+        registry = _read_live_registry(client_id, initialization)
+        registry["bootstrapped"] = True
+        registry["updated_at"] = utc_now_precise()
+        _write_local_json(_live_registry_file(), registry)
         return {
             "applied": False,
             "nothing_to_do": True,
+            "enrolled": True,
             "counts": counts,
             "message": "To Kodi jest już zgodne z bezpiecznym stanem początkowym.",
         }
@@ -2283,11 +2291,6 @@ def apply_initial_sync(show_notification=False):
     local_status["last_initial_apply_post_plan"] = post_plan or {}
     _write_local_json(os.path.join(_addon_profile_path(), "status.json"), local_status)
     
-    registry = _read_live_registry(client_id, initialization)
-    if not registry.get("bootstrapped"):
-        registry["bootstrapped"] = True
-        _write_local_json(_live_registry_file(), registry)
-
     if apply_report["errors"]:
         first = apply_report["errors"][0]
         raise RuntimeError(
@@ -2295,6 +2298,12 @@ def apply_initial_sync(show_notification=False):
                 first.get("display") or first.get("index"), first.get("error"), backup_path, report_path
             )
         )
+
+    if apply_report["completed"]:
+        registry = _read_live_registry(client_id, initialization)
+        registry["bootstrapped"] = True
+        registry["updated_at"] = utc_now_precise()
+        _write_local_json(_live_registry_file(), registry)
 
     if show_notification or settings.get("notifications"):
         xbmcgui.Dialog().notification(
