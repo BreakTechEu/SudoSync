@@ -50,6 +50,36 @@ class TestSudoSync(unittest.TestCase):
         ]
         self.assertFalse(sudosync_merge._safe_mirror_cluster(cluster3))
 
+    def test_remote_snapshot_schema(self):
+        valid = {
+            "format": "SudoSync client snapshot",
+            "schema_version": 2,
+            "client": {"id": "12345678-1234-1234-1234-123456789012", "name": "Kodi"},
+            "movies": [],
+            "episodes": [],
+        }
+        self.assertIsNone(sudosync_core._validate_remote_snapshot(valid))
+
+        invalid = dict(valid)
+        invalid["client"] = {"name": "Kodi"}
+        self.assertIsNotNone(sudosync_core._validate_remote_snapshot(invalid))
+
+        wrong_legacy_shape = dict(valid)
+        wrong_legacy_shape.pop("client")
+        wrong_legacy_shape["client_id"] = "12345678-1234-1234-1234-123456789012"
+        wrong_legacy_shape["state"] = {"records": {}}
+        self.assertIsNotNone(sudosync_core._validate_remote_snapshot(wrong_legacy_shape))
+
+    def test_zero_version_has_lamport_clock(self):
+        self.assertEqual(sudosync_core.ZERO_VERSION.get("lc"), 0)
+
+    def test_conflict_version_tuple_contains_lamport_fields(self):
+        version = {"lc": 7, "ts": "2026-10-06T10:00:00.000Z", "seq": 4, "client_id": "client-A"}
+        self.assertEqual(
+            sudosync_merge._version_tuple(version),
+            (7, "2026-10-06T10:00:00.000Z", 4, "client-A"),
+        )
+
     def test_numeric_version(self):
         self.assertEqual(sudosync_core._numeric_version("1.1.0-alpha"), (1, 1, 0, 0))
         self.assertEqual(sudosync_core._numeric_version("1.1.0-beta"), (1, 1, 0, 1))
