@@ -90,5 +90,40 @@ class TestSudoSync(unittest.TestCase):
         self.assertGreater(sudosync_core._numeric_version("1.1.0-beta"), sudosync_core._numeric_version("1.1.0-alpha"))
         self.assertGreater(sudosync_core._numeric_version("1.1.0"), sudosync_core._numeric_version("1.1.0-beta"))
 
+    def test_snapshots_ready_for_live(self):
+        import time
+        now = time.time()
+        # Fresh snapshot, valid live mode
+        snap1 = {
+            "client": {"id": "c1", "name": "LivingRoom"},
+            "mode": "live",
+            "live_schema_version": sudosync_core.LIVE_SCHEMA_VERSION,
+            "mtime": now,
+        }
+        # Fresh snapshot, old/not-live mode
+        snap2 = {
+            "client": {"id": "c2", "name": "Bedroom"},
+            "mode": "initial",
+            "live_schema_version": 0,
+            "mtime": now,
+        }
+        # Stale snapshot (> 14 days old), old mode but should be ignored!
+        snap3 = {
+            "client": {"id": "c3", "name": "OldTablet"},
+            "mode": "initial",
+            "live_schema_version": 0,
+            "mtime": now - (15 * 86400),
+        }
+        not_ready = sudosync_core._snapshots_ready_for_live([snap1, snap2, snap3])
+        # Only snap2 should block live sync; snap3 is stale (>14d) and ignored
+        self.assertEqual(not_ready, ["Bedroom"])
+
+    def test_nfo_cache_and_clear(self):
+        sudosync_core._NFO_ID_CACHE.clear()
+        sudosync_core._NFO_ID_CACHE["/path/test.mkv"] = {"sudosync": "test-123"}
+        self.assertEqual(len(sudosync_core._NFO_ID_CACHE), 1)
+        sudosync_core._NFO_ID_CACHE.clear()
+        self.assertEqual(len(sudosync_core._NFO_ID_CACHE), 0)
+
 if __name__ == '__main__':
     unittest.main()

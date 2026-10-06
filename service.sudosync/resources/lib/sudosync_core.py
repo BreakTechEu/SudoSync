@@ -279,7 +279,7 @@ def update_shared_config(mutator_func, base_path=None):
             info = {}
             
         lock_ts = float(info.get("timestamp") or 0.0)
-        if now_ts - lock_ts > 60.0:
+        if lock_ts > 0.0 and (now_ts - lock_ts > 60.0):
             log("Znaleziono osierocona blokade. Usuwanie...")
             try:
                 xbmcvfs.delete(lock_info_path)
@@ -1640,10 +1640,8 @@ def _snapshots_ready_for_live(snapshots):
     now_ts = datetime.now(timezone.utc).timestamp()
     for snap in snapshots:
         client = snap.get("client") if isinstance(snap.get("client"), dict) else {}
-        pulse_epoch = float(client.get("pulse_epoch") or 0.0)
         file_mtime = float(snap.get("mtime") or 0.0)
-        
-        if now_ts - file_mtime > 14 * 86400 or now_ts - pulse_epoch > 7 * 86400:
+        if file_mtime > 0.0 and (now_ts - file_mtime > 14 * 86400):
             continue
             
         if snap.get("mode") != "live" or _safe_int(snap.get("live_schema_version"), 0) < LIVE_SCHEMA_VERSION:
@@ -2514,6 +2512,8 @@ def assign_sudosync_ids(show_notification=True):
     for e in episodes:
         if _process_item(e, "episode"):
             modified_episodes += 1
+
+    _NFO_ID_CACHE.clear()
 
     return {"movies": modified_movies, "episodes": modified_episodes}
 
