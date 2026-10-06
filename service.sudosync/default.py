@@ -114,8 +114,11 @@ def show_status():
         report=status.get("last_live_report_path", "—"),
     )
 
+    import xbmcaddon
+    addon_version = xbmcaddon.Addon("service.sudosync").getAddonInfo("version")
+
     text = (
-        "Tryb: SudoSync 0.4.2 — LIVE + powiadomienia zmian i ochrona nowszego odtwarzania\n\n"
+        "Tryb: SudoSync {version} — LIVE + powiadomienia zmian i ochrona nowszego odtwarzania\n\n"
         "Urządzenie: {name}\n"
         "Client ID: {cid}\n"
         "Kodi: {kodi} ({platform})\n"
@@ -130,6 +133,7 @@ def show_status():
         "{live}\n\n"
         "Aktualizacje: {update}"
     ).format(
+        version=addon_version,
         name=status.get("client_name", "Kodi"),
         cid=status.get("client_id", "—"),
         kodi=kodi.get("version", "—"),

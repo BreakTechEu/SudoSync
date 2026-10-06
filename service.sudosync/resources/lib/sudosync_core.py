@@ -178,6 +178,9 @@ def addon_settings():
     
     sudosync_id_enabled = addon.getSetting("sudosync_id_enabled").strip().lower() == "true"
     sudosync_id_prefix = addon.getSetting("sudosync_id_prefix").strip()
+    if sudosync_id_prefix:
+        sudosync_id_prefix = re.sub(r"[^A-Za-z0-9._-]", "-", sudosync_id_prefix)
+
     if not sudosync_id_prefix and base.startswith("smb://"):
         try:
             host = base.split("://")[1].split("/")[0].upper()
@@ -258,10 +261,27 @@ def write_shared_config(data, base_path=None):
     if not xbmcvfs.exists(system_dir):
         xbmcvfs.mkdirs(system_dir)
     data = dict(data or {})
+    
+    path = _shared_config_path(base)
+    
+    try:
+        if xbmcvfs.exists(path):
+            current_data = _read_vfs_json(path)
+            current_rev = current_data.get("revision", 0)
+            my_rev = data.get("revision", 0)
+            if current_rev > my_rev:
+                merged = dict(current_data)
+                merged.update(data)
+                data = merged
+                data["revision"] = current_rev
+    except Exception:
+        pass
+        
+    data["revision"] = data.get("revision", 0) + 1
     data["format"] = "SudoSync shared config"
     data["schema_version"] = 1
     data["updated_at"] = utc_now()
-    path = _shared_config_path(base)
+    
     _write_vfs_json(path, data)
     return path
 
@@ -376,10 +396,21 @@ def _mark_initialization_completed_if_converged(report, base_path=None):
 
 
 def _numeric_version(text):
-    nums = re.findall(r"\d+", str(text or ""))
+    text_str = str(text or "").lower()
+    nums = re.findall(r"\d+", text_str)
     values = [int(x) for x in nums[:3]]
     while len(values) < 3:
         values.append(0)
+    
+    tag_val = 3
+    if "-alpha" in text_str or "alpha" in text_str:
+        tag_val = 0
+    elif "-beta" in text_str or "beta" in text_str:
+        tag_val = 1
+    elif "-rc" in text_str or "rc" in text_str:
+        tag_val = 2
+        
+    values.append(tag_val)
     return tuple(values)
 
 
@@ -710,10 +741,15 @@ def _read_vfs_text(path, max_bytes=256 * 1024):
         return ""
 
 
-def _ids_from_nfo(media_file, kind):
-    for path in _nfo_candidates(media_file, kind):
+def _find_best_nfo(media_file, kind):
+    candidates = _nfo_candidates(media_file, kind)
+    first_existing = None
+    
+    for path in candidates:
         if not xbmcvfs.exists(path):
             continue
+        if first_existing is None:
+            first_existing = path
         text = _read_vfs_text(path)
         if not text:
             continue
@@ -721,6 +757,7 @@ def _ids_from_nfo(media_file, kind):
             root = ET.fromstring(text)
         except Exception:
             continue
+            
         ids = {}
         for node in root.findall("uniqueid"):
             typ = (node.attrib.get("type") or "").strip().lower()
@@ -734,8 +771,15 @@ def _ids_from_nfo(media_file, kind):
             legacy = root.findtext("id")
             if legacy and legacy.strip().startswith("tt") and "imdb" not in ids:
                 ids["imdb"] = legacy.strip()
-        return ids
-    return {}
+                
+        if ids:
+            return path, ids, text
+            
+    return first_existing or (candidates[0] if candidates else None), {}, ""
+
+def _ids_from_nfo(media_file, kind):
+    _, ids, _ = _find_best_nfo(media_file, kind)
+    return ids
 
 
 def _record(kind, item, first_import=True):
@@ -2151,20 +2195,20 @@ def assign_sudosync_ids(show_notification=True):
         file_path = item.get("file")
         if not file_path:
             return False
-        nfo_candidates = _nfo_candidates(file_path, kind)
-        
+            
         item_id = hashlib.md5(file_path.encode("utf-8")).hexdigest()[:12]
         full_id = "{}-{}".format(prefix, item_id)
         
-        existing_path = None
-        for path in nfo_candidates:
-            if xbmcvfs.exists(path):
-                existing_path = path
-                break
+        import xml.sax.saxutils
+        escaped_full_id = xml.sax.saxutils.escape(full_id)
+        
+        best_path, _, _ = _find_best_nfo(file_path, kind)
+        if not best_path:
+            return False
                 
-        if existing_path:
+        if xbmcvfs.exists(best_path):
             try:
-                f = xbmcvfs.File(existing_path)
+                f = xbmcvfs.File(best_path)
                 raw = f.readBytes(256 * 1024)
                 f.close()
                 if not raw:
@@ -2182,37 +2226,36 @@ def assign_sudosync_ids(show_notification=True):
                 if pos < 0:
                     return False
 
-                insert = ('    <uniqueid type="sudosync" default="true">' + full_id + '</uniqueid>\n').encode("utf-8")
+                insert = ('    <uniqueid type="sudosync" default="true">' + escaped_full_id + '</uniqueid>\n').encode("utf-8")
                 new_raw = raw[:pos] + insert + raw[pos:]
 
-                bak_path = existing_path + ".bak"
-                new_path = existing_path + ".new"
+                bak_path = best_path + ".bak"
+                new_path = best_path + ".new"
 
                 _write_vfs_bytes(new_path, new_raw)
                 if xbmcvfs.exists(bak_path):
                     xbmcvfs.delete(bak_path)
-                xbmcvfs.rename(existing_path, bak_path)
-                xbmcvfs.rename(new_path, existing_path)
+                xbmcvfs.rename(best_path, bak_path)
+                xbmcvfs.rename(new_path, best_path)
                 if xbmcvfs.exists(new_path):
                     xbmcvfs.delete(new_path)
 
                 _refresh_item(item, kind)
                 return True
             except Exception as exc:
-                log("Błąd zapisu NFO dla {}: {}".format(existing_path, exc), xbmc.LOGWARNING)
+                log("Błąd zapisu NFO dla {}: {}".format(best_path, exc), xbmc.LOGWARNING)
                 return False
         else:
-            primary_path = nfo_candidates[0]
             root_tag = "movie" if kind == "movie" else "episodedetails"
             title = item.get("title") or item.get("originaltitle") or "Nieznany"
-            title = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            xml_content = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<{root}>\n  <title>{title}</title>\n  <uniqueid type="sudosync" default="true">{id}</uniqueid>\n</{root}>\n'.format(root=root_tag, id=full_id, title=title)
+            title = xml.sax.saxutils.escape(title)
+            xml_content = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<{root}>\n  <title>{title}</title>\n  <uniqueid type="sudosync" default="true">{id}</uniqueid>\n</{root}>\n'.format(root=root_tag, id=escaped_full_id, title=title)
             try:
-                _write_vfs_bytes(primary_path, xml_content)
+                _write_vfs_bytes(best_path, xml_content)
                 _refresh_item(item, kind)
                 return True
             except Exception as exc:
-                log("Błąd tworzenia NFO dla {}: {}".format(primary_path, exc), xbmc.LOGWARNING)
+                log("Błąd tworzenia NFO dla {}: {}".format(best_path, exc), xbmc.LOGWARNING)
                 return False
 
     def _refresh_item(item, kind):

@@ -19,6 +19,8 @@ Synchronization relies on a shared network directory (SMB, NFS, or local share) 
 - **Robust Conflict Model:** Each synchronized field maintains its own timestamp and client version, preventing race conditions and feedback loops.
 - **Optimized for Android TV & Streaming Devices:** A lightweight state diff engine handles platforms where Kodi occasionally fails to trigger `OnUpdate` or `OnStop` notifications.
 - **Scraper & NFO Quarantine:** Newly scanned library items and NFO imports receive older internal versions to prevent accidental overwrites of existing shared playback progress.
+- **Experimental SudoSync ID:** Automatically assigns and securely injects unique identifiers into `.nfo` files for private home videos that lack standard online scraper IDs.
+- **Network ID vs UI Alias:** Distinctly separates internal network identifiers from user-friendly UI aliases to keep network mapping robust while displaying readable names.
 
 ---
 
@@ -35,18 +37,19 @@ Synchronization relies on a shared network directory (SMB, NFS, or local share) 
 
 1. **Download:**
    - Go to the **Releases** section on the right side of this repository.
-   - Download the latest `service.sudosync-1.0.0.zip` package.
+   - Download the latest `service.sudosync-1.1.0-beta.zip` package.
 
 2. **Install in Kodi:**
    - In Kodi, navigate to: *Settings -> Add-ons -> Install from zip file*.
    - Select the downloaded archive.
 
-3. **Configure Network Path:**
+3. **Configure Network Path & Identifiers:**
    - Open SudoSync add-on settings in Kodi.
    - Specify the shared network folder where all Kodi instances have read and write permissions, e.g.:
      ```text
      smb://192.168.1.100/SharedFolder/.SudoSync/
      ```
+   - In the settings, specify your **Network Identifier** (used internally for file sync) and your **UI Alias** (a friendly name displayed on screen).
 
 ---
 
