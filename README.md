@@ -2,6 +2,8 @@
 
 ---
 
+> **Note:** This repository (master branch) now tracks **SudoSync v2 (Beta)** featuring the experimental SudoSync ID system for private videos without standard online IDs. We are waiting for feedback, feature requests, and bug reports! For the older stable v1 release, please switch to the [v1-stable](https://github.com/BreakTechEu/SudoSync/tree/v1-stable) branch.
+
 # SudoSync for Kodi
 
 A lightweight background service add-on for Kodi that provides automatic, two-way synchronization of watch states, resume points, user ratings, and last-played timestamps across multiple Kodi instances in the same local network — without requiring an external MySQL/MariaDB server.

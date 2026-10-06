@@ -2,6 +2,8 @@
 
 ---
 
+> **Uwaga:** To repozytorium (gałąź master) zawiera teraz nową wersję **SudoSync v2 (Beta)**, wprowadzającą własne identyfikatory SudoSync ID dla prywatnych wideo pozbawionych wpisów w bazach online. Czekamy na Wasze zgłoszenia problemów i potrzeb! Starsza, w pełni stabilna wersja v1 znajduje się na gałęzi [v1-stable](https://github.com/BreakTechEu/SudoSync/tree/v1-stable).
+
 # SudoSync dla Kodi
 
 Lekka wtyczka usługi działająca w tle dla odtwarzacza Kodi, zapewniająca automatyczną, dwukierunkową synchronizację stanu obejrzenia, punktów wznowienia, ocen użytkownika oraz daty ostatniego odtworzenia pomiędzy wieloma instancjami Kodi w tej samej sieci lokalnej — bez konieczności stawiania zewnętrznego serwera bazy danych MySQL/MariaDB.
