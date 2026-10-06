@@ -518,6 +518,7 @@ def _live_state(record):
 def _version_tuple(version):
     version = version if isinstance(version, dict) else {}
     return (
+        _safe_int(version.get("lc"), 0),
         str(version.get("ts") or ""),
         _safe_int(version.get("seq"), 0),
         str(version.get("client_id") or ""),
@@ -528,6 +529,7 @@ def _field_version(record, field):
     versions = record.get("field_versions") if isinstance(record.get("field_versions"), dict) else {}
     value = versions.get(field) if isinstance(versions.get(field), dict) else {}
     return {
+        "lc": _safe_int(value.get("lc"), 0),
         "ts": str(value.get("ts") or ""),
         "client_id": str(value.get("client_id") or ""),
         "seq": _safe_int(value.get("seq"), 0),

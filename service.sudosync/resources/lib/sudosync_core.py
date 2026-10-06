@@ -253,37 +253,65 @@ def read_shared_config(base_path=None):
         raise IOError("Nie można odczytać wspólnej konfiguracji SudoSync: {}".format(exc))
 
 
-def write_shared_config(data, base_path=None):
+def update_shared_config(mutator_func, base_path=None):
     settings = addon_settings()
     base = (base_path or settings["base_path"]).rstrip("/") + "/"
     ensure_remote_layout(base)
     system_dir = _join_vfs(base, "system")
     if not xbmcvfs.exists(system_dir):
         xbmcvfs.mkdirs(system_dir)
-    data = dict(data or {})
     
     path = _shared_config_path(base)
+    lock_dir = path + ".lockdir"
+    import time
     
+    locked = False
+    start = datetime.now(timezone.utc).timestamp()
+    while True:
+        if xbmcvfs.mkdirs(lock_dir):
+            locked = True
+            break
+        if datetime.now(timezone.utc).timestamp() - start > 15.0:
+            locked = True
+            break
+        xbmc.sleep(200)
+
     try:
+        data = None
         if xbmcvfs.exists(path):
-            current_data = _read_vfs_json(path)
-            current_rev = current_data.get("revision", 0)
-            my_rev = data.get("revision", 0)
-            if current_rev > my_rev:
-                merged = dict(current_data)
-                merged.update(data)
-                data = merged
-                data["revision"] = current_rev
-    except Exception:
-        pass
+            try:
+                data = _read_vfs_json(path)
+            except Exception:
+                pass
+                
+        if not isinstance(data, dict):
+            data = {
+                "format": "SudoSync shared config",
+                "schema_version": 1,
+                "initialization": {
+                    "completed": False,
+                    "base_client_id": "",
+                    "base_client_name": "",
+                },
+            }
+            
+        current_rev = data.get("revision", 0)
         
-    data["revision"] = data.get("revision", 0) + 1
-    data["format"] = "SudoSync shared config"
-    data["schema_version"] = 1
-    data["updated_at"] = utc_now()
-    
-    _write_vfs_json(path, data)
-    return path
+        changed = mutator_func(data)
+        if changed is False:
+            return path
+            
+        data["revision"] = current_rev + 1
+        data["updated_at"] = utc_now()
+        
+        _write_vfs_json(path, data)
+        return path
+    finally:
+        if locked:
+            try:
+                xbmcvfs.rmdir(lock_dir)
+            except Exception:
+                pass
 
 
 def sync_initial_base_selection(show_notification=False):
@@ -305,10 +333,13 @@ def sync_initial_base_selection(show_notification=False):
     # Only keep the label current for the already selected client. Ownership is
     # never changed here.
     if base_id == client_id and explicit_name and explicit_name != base_name:
-        init["base_client_name"] = explicit_name
-        config["initialization"] = init
-        write_shared_config(config, settings["base_path"])
-    return config
+        def mutator(cfg):
+            cfg_init = cfg.setdefault("initialization", {})
+            if str(cfg_init.get("base_client_id") or "") == client_id:
+                cfg_init["base_client_name"] = explicit_name
+            return True
+        update_shared_config(mutator, settings["base_path"])
+    return read_shared_config(settings["base_path"])
 
 
 def select_this_as_initial_base():
@@ -340,15 +371,17 @@ def select_this_as_initial_base():
         )
 
     already = base_id == client_id
-    init.update({
-        "completed": False,
-        "base_client_id": client_id,
-        "base_client_name": explicit_name,
-        "selected_at": init.get("selected_at") if already and init.get("selected_at") else utc_now(),
-        "completed_at": "",
-    })
-    config["initialization"] = init
-    path = write_shared_config(config, settings["base_path"])
+    def mutator(cfg):
+        cfg_init = cfg.setdefault("initialization", {})
+        cfg_init.update({
+            "completed": False,
+            "base_client_id": client_id,
+            "base_client_name": explicit_name,
+            "selected_at": cfg_init.get("selected_at") if already and cfg_init.get("selected_at") else utc_now(),
+            "completed_at": "",
+        })
+        return True
+    path = update_shared_config(mutator, settings["base_path"])
     return {
         "selected": True,
         "already_selected": already,
@@ -365,15 +398,17 @@ def clear_initial_base_selection():
     init = config.get("initialization") or {}
     if init.get("completed", False):
         raise RuntimeError("Pierwsza synchronizacja jest już zakończona. Zwykłe wyczyszczenie wyboru bazowego jest zablokowane.")
-    init.update({
-        "completed": False,
-        "base_client_id": "",
-        "base_client_name": "",
-        "selected_at": "",
-        "completed_at": "",
-    })
-    config["initialization"] = init
-    path = write_shared_config(config, settings["base_path"])
+    def mutator(cfg):
+        cfg_init = cfg.setdefault("initialization", {})
+        cfg_init.update({
+            "completed": False,
+            "base_client_id": "",
+            "base_client_name": "",
+            "selected_at": "",
+            "completed_at": "",
+        })
+        return True
+    path = update_shared_config(mutator, settings["base_path"])
     return path
 
 
@@ -387,11 +422,14 @@ def _mark_initialization_completed_if_converged(report, base_path=None):
     init = config.get("initialization") or {}
     if not init.get("base_client_id"):
         return False
-    if not init.get("completed", False):
-        init["completed"] = True
-        init["completed_at"] = utc_now()
-        config["initialization"] = init
-        write_shared_config(config, base_path)
+    def mutator(cfg):
+        cfg_init = cfg.setdefault("initialization", {})
+        if not cfg_init.get("completed", False):
+            cfg_init["completed"] = True
+            cfg_init["completed_at"] = utc_now()
+            return True
+        return False
+    update_shared_config(mutator, base_path)
     return True
 
 
@@ -1063,21 +1101,28 @@ def _read_live_registry(client_id, initialization):
 
 def _next_live_version(registry, client_id):
     registry["seq"] = _safe_int(registry.get("seq"), 0) + 1
-    return {"ts": utc_now_precise(), "client_id": client_id, "seq": registry["seq"]}
+    registry["lc"] = _safe_int(registry.get("lc"), 0) + 1
+    return {"lc": registry["lc"], "ts": utc_now_precise(), "client_id": client_id, "seq": registry["seq"]}
 
 
 def _acquire_live_lock(max_age_seconds=180):
     path = _live_lock_file()
     now = datetime.now(timezone.utc).timestamp()
-    old = _read_local_json(path) or {}
     try:
-        started = float(old.get("started_epoch") or 0)
-    except Exception:
-        started = 0
-    if old.get("locked") and started and now - started < max_age_seconds:
+        if os.path.exists(path):
+            try:
+                old = json.load(open(path, "r", encoding="utf-8"))
+                started = float(old.get("started_epoch") or 0)
+                if now - started > max_age_seconds:
+                    os.remove(path)
+            except Exception:
+                os.remove(path)
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"locked": True, "started_epoch": now, "started_at": utc_now_precise()}, f)
+        return True
+    except OSError:
         return False
-    _write_local_json(path, {"locked": True, "started_epoch": now, "started_at": utc_now_precise()})
-    return True
 
 
 def _release_live_lock():
@@ -1543,7 +1588,9 @@ def _accept_remote_into_registry(item):
             target = str(target or "")
         observed[field] = target
         published[field] = target
-        versions[field] = dict(target_versions.get(field) or versions.get(field) or ZERO_VERSION)
+        tv = dict(target_versions.get(field) or versions.get(field) or ZERO_VERSION)
+        versions[field] = tv
+        registry["lc"] = max(_safe_int(registry.get("lc"), 0), _safe_int(tv.get("lc"), 0))
     entry["observed_state"] = observed
     entry["published_state"] = published
     entry["field_versions"] = versions
@@ -1602,6 +1649,10 @@ def run_live_sync_cycle(show_notification=False, suppress_local_changes=False, c
         pass
     shared = read_shared_config(settings["base_path"])
     initialization = shared.get("initialization") or {}
+    client_id = get_or_create_client_id()
+    registry = _read_live_registry(client_id, initialization)
+    if initialization.get("completed", False) and not registry.get("bootstrapped"):
+        return {"active": False, "reason": "client_needs_enrollment"}
     if not initialization.get("completed", False):
         return {"active": False, "reason": "initialization_not_completed"}
     if not settings.get("live_sync_enabled", True):
@@ -1810,8 +1861,21 @@ def read_remote_snapshots(base_path=None):
         path = clients_path + filename
         try:
             data = _read_vfs_json(path)
+            if not isinstance(data, dict):
+                errors.append({"file": filename, "error": "not a JSON dictionary"})
+                continue
             if data.get("format") != "SudoSync client snapshot":
                 errors.append({"file": filename, "error": "not a SudoSync client snapshot"})
+                continue
+            if int(data.get("schema_version") or 0) < 1:
+                errors.append({"file": filename, "error": "unsupported schema_version"})
+                continue
+            if not isinstance(data.get("client_id"), str) or len(data.get("client_id")) < 10:
+                errors.append({"file": filename, "error": "missing or invalid client_id"})
+                continue
+            state = data.get("state")
+            if not isinstance(state, dict) or not isinstance(state.get("records"), dict):
+                errors.append({"file": filename, "error": "missing or invalid state payload"})
                 continue
             snapshots.append(data)
         except Exception as exc:
@@ -2010,9 +2074,7 @@ def apply_initial_sync(show_notification=False):
 
     shared_config = sync_initial_base_selection(show_notification=False)
     initialization = shared_config.get("initialization") or {}
-    if initialization.get("completed", False):
-        disarm_initial_write_guard()
-        raise RuntimeError("Pierwsza synchronizacja została już zakończona.")
+
     if not initialization.get("base_client_id"):
         disarm_initial_write_guard()
         raise RuntimeError("Nie wybrano urządzenia bazowego. Użyj przycisku „Ustaw TO Kodi jako urządzenie bazowe pierwszej synchronizacji” na jednym nazwanym Kodi.")
@@ -2111,6 +2173,11 @@ def apply_initial_sync(show_notification=False):
     local_status["last_initial_apply_backup"] = backup_path
     local_status["last_initial_apply_post_plan"] = post_plan or {}
     _write_local_json(os.path.join(_addon_profile_path(), "status.json"), local_status)
+    
+    registry = _read_live_registry(client_id, initialization)
+    if not registry.get("bootstrapped"):
+        registry["bootstrapped"] = True
+        _write_local_json(_live_registry_file(), registry)
 
     if apply_report["errors"]:
         first = apply_report["errors"][0]
@@ -2157,10 +2224,12 @@ def get_or_sync_network_id_and_alias(base_path=None):
         else:
             import random, string
             network_id = "NET-" + "".join(random.choice(string.ascii_uppercase + string.digits) for _ in range(4))
-        config["sudosync_network_id"] = network_id
-        config["sudosync_network_alias"] = local_prefix or network_id
-        config["sudosync_network_alias_ts"] = utc_now()
-        write_shared_config(config, base)
+        def mutator1(cfg):
+            cfg["sudosync_network_id"] = network_id
+            cfg["sudosync_network_alias"] = local_prefix or network_id
+            cfg["sudosync_network_alias_ts"] = utc_now()
+            return True
+        update_shared_config(mutator1, base)
         addon.setSetting("sudosync_id_prefix", config["sudosync_network_alias"])
         addon.setSetting("sudosync_id_prefix_last_synced", config["sudosync_network_alias"])
         return network_id
@@ -2168,9 +2237,11 @@ def get_or_sync_network_id_and_alias(base_path=None):
     shared_alias = config.get("sudosync_network_alias", "")
     
     if local_prefix != last_synced:
-        config["sudosync_network_alias"] = local_prefix
-        config["sudosync_network_alias_ts"] = utc_now()
-        write_shared_config(config, base)
+        def mutator2(cfg):
+            cfg["sudosync_network_alias"] = local_prefix
+            cfg["sudosync_network_alias_ts"] = utc_now()
+            return True
+        update_shared_config(mutator2, base)
         addon.setSetting("sudosync_id_prefix_last_synced", local_prefix)
     elif shared_alias != local_prefix:
         addon.setSetting("sudosync_id_prefix", shared_alias)
@@ -2196,7 +2267,7 @@ def assign_sudosync_ids(show_notification=True):
         if not file_path:
             return False
             
-        item_id = hashlib.md5(file_path.encode("utf-8")).hexdigest()[:12]
+        item_id = uuid.uuid4().hex[:12]
         full_id = "{}-{}".format(prefix, item_id)
         
         import xml.sax.saxutils
