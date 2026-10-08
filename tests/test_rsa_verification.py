@@ -124,7 +124,7 @@ class TestSecurityFixes(unittest.TestCase):
         addon = MagicMock()
         addon.getSetting.side_effect = lambda key: {
             "sudosync_id_prefix": "EVIL",
-            "sudosync_id_prefix_last_synced": "GOOD",
+            "sudosync_id_prefix_last_synced": "OLD",
         }.get(key, "")
         config = {
             "initialization": {"base_client_id": "BASE"},
