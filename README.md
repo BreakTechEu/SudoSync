@@ -2,7 +2,7 @@
 
 ---
 
-> **Note:** This repository (master branch) now tracks **SudoSync v2 (Beta)** featuring the experimental SudoSync ID system for private videos without standard online IDs. We are waiting for feedback, feature requests, and bug reports! For the older stable v1 release, please switch to the [v1-stable](https://github.com/BreakTechEu/SudoSync/tree/v1-stable) branch.
+> **Note:** The `master` branch contains the current SudoSync 1.2.0 codebase, including the experimental SudoSync ID system for private videos without standard online IDs.
 
 # SudoSync for Kodi
 
@@ -40,7 +40,7 @@ Synchronization relies on a shared network directory (SMB, NFS, or local share) 
 
 1. **Download:**
    - Go to the **Releases** section on the right side of this repository.
-   - Download the latest `service.sudosync-1.2.0-beta.zip` package.
+   - Download the latest `service.sudosync-1.2.0.zip` package.
 
 2. **Install in Kodi:**
    - In Kodi, navigate to: *Settings -> Add-ons -> Install from zip file*.
@@ -62,7 +62,7 @@ Synchronization relies on a shared network directory (SMB, NFS, or local share) 
 > **Important Update Notice:**
 > Currently (temporarily), the only valid and safe way to update the add-on without breaking the existing installation is to place the new release package (`.zip`) directly into the shared `.SudoSync` network folder (e.g. `smb://.../.SudoSync/service.sudosync-X.X.X.zip`).
 >
-> SudoSync will detect the new package in the shared directory and handle the update (either prompting you or installing automatically if enabled in add-on settings). Do not reinstall over an existing setup using Kodi's standard "Install from zip file" dialog.
+> SudoSync detects the new package in the shared directory, verifies its RSA-2048 signature, and installs it before starting normal synchronization. The startup update check cannot be disabled. Do not reinstall over an existing setup using Kodi's standard "Install from zip file" dialog.
 
 ---
 
