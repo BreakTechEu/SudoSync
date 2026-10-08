@@ -432,6 +432,7 @@ def build_dry_run(snapshots, base_client_id=None):
                     "client": node["client_name"],
                     "local": node["record"].get("local") or {},
                     "file": node["record"].get("file") or "",
+                    "aliases": _aliases(node["record"]),
                     "changes": changes,
                 }
                 for field in changes:
@@ -442,6 +443,7 @@ def build_dry_run(snapshots, base_client_id=None):
                     "display": display,
                     "local": node["record"].get("local") or {},
                     "file": node["record"].get("file") or "",
+                    "aliases": _aliases(node["record"]),
                     "changes": changes,
                 })
         safe_clusters.append(cluster_plan)
