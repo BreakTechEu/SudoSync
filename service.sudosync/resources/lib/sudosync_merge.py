@@ -741,6 +741,7 @@ def build_live_plan(snapshots):
                     "local": node["record"].get("local") or {},
                     "local_key": node["record"].get("sync_local_key") or "",
                     "file": node["record"].get("file") or "",
+                    "aliases": sorted(_aliases(node["record"])),
                     "changes": changes,
                     "target_versions": item_versions,
                 }
