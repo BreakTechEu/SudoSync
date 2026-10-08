@@ -6,6 +6,9 @@
 # (at your option) any later version.
 # -------------------------------------------------------------------------
 import json
+import hashlib
+import hmac
+import io
 import os
 import re
 import shutil
@@ -39,95 +42,87 @@ floamhW9nGAWsRGr9baG7nLh4mUi/yA+9QIDAQAB
 
 def _verify_rsa_pkcs1_sha256(public_key_pem, message_bytes, signature_bytes):
     import base64
-    import hashlib
-    
-    lines = [line.strip() for line in public_key_pem.strip().splitlines() if not line.startswith("---")]
-    der = base64.b64decode("".join(lines))
-    
-    def _read_length(der, idx):
-        length = der[idx]
+
+    try:
+        lines = [line.strip() for line in public_key_pem.strip().splitlines() if not line.startswith("---")]
+        der = base64.b64decode("".join(lines))
+    except Exception as exc:
+        raise ValueError("Nieprawidłowy klucz publiczny RSA: {}".format(exc))
+
+    def _read_length(data, idx):
+        if idx >= len(data):
+            raise ValueError("Nieprawidłowy ASN.1: brak długości")
+        length = data[idx]
         idx += 1
         if length & 0x80:
             num_bytes = length & 0x7F
-            length = int.from_bytes(der[idx:idx+num_bytes], 'big')
+            if num_bytes == 0 or idx + num_bytes > len(data):
+                raise ValueError("Nieprawidłowy ASN.1: długość")
+            length = int.from_bytes(data[idx:idx + num_bytes], "big")
             idx += num_bytes
         return length, idx
-        
-    def _read_integer(der, idx):
-        if der[idx] != 0x02:
-            raise ValueError("Expected INTEGER")
-        idx += 1
-        length, idx = _read_length(der, idx)
-        if der[idx] == 0x00:
-            val = int.from_bytes(der[idx+1:idx+length], 'big')
-        else:
-            val = int.from_bytes(der[idx:idx+length], 'big')
-        return val, idx+length
 
-    idx = 0
-    if der[idx] != 0x30:
-        raise ValueError("Expected SEQUENCE")
-    idx += 1
-    length, idx = _read_length(der, idx)
-    
-    if der[idx] == 0x30:
-        found = False
-        while idx < len(der):
-            if der[idx] == 0x03:
-                idx += 1
-                length, idx = _read_length(der, idx)
-                idx += 1 
-                found = True
-                break
-            idx += 1
-        if not found:
-            raise ValueError("No BIT STRING found")
-        
-        if der[idx] != 0x30:
-            raise ValueError("Expected SEQUENCE inside BIT STRING")
+    def _read_integer(data, idx):
+        if idx >= len(data) or data[idx] != 0x02:
+            raise ValueError("Nieprawidłowy ASN.1: oczekiwano INTEGER")
         idx += 1
-        length, idx = _read_length(der, idx)
-        
-    n, idx = _read_integer(der, idx)
-    e, idx = _read_integer(der, idx)
-        
-    sig_int = int.from_bytes(signature_bytes, 'big')
-    if sig_int >= n:
-        raise ValueError("Signature integer too large")
-        
-    decrypted_int = pow(sig_int, e, n)
+        length, idx = _read_length(data, idx)
+        end = idx + length
+        if end > len(data) or length == 0:
+            raise ValueError("Nieprawidłowy ASN.1: INTEGER")
+        return int.from_bytes(data[idx:end], "big"), end
+
+    def _read_numbers(data):
+        idx = 0
+        if not data or data[idx] != 0x30:
+            raise ValueError("Nieprawidłowy ASN.1: oczekiwano SEQUENCE")
+        idx += 1
+        length, idx = _read_length(data, idx)
+        end = idx + length
+        if end > len(data):
+            raise ValueError("Nieprawidłowy ASN.1: SEQUENCE poza zakresem")
+
+        if idx < end and data[idx] == 0x30:
+            alg_len, alg_start = _read_length(data, idx + 1)
+            alg_end = alg_start + alg_len
+            if alg_end > end:
+                raise ValueError("Nieprawidłowy ASN.1: AlgorithmIdentifier")
+            idx = alg_end
+            if idx >= end or data[idx] != 0x03:
+                raise ValueError("Nieprawidłowy ASN.1: brak BIT STRING")
+            bit_len, bit_start = _read_length(data, idx + 1)
+            bit_end = bit_start + bit_len
+            if bit_end > end or bit_len < 1 or data[bit_start] != 0:
+                raise ValueError("Nieprawidłowy ASN.1: BIT STRING")
+            return _read_numbers(data[bit_start + 1:bit_end])
+
+        n, idx = _read_integer(data, idx)
+        e, idx = _read_integer(data, idx)
+        return n, e
+
+    n, e = _read_numbers(der)
     k = (n.bit_length() + 7) // 8
-    decrypted_bytes = decrypted_int.to_bytes(k, 'big')
-    
-    if decrypted_bytes[0:2] != b'\x00\x01':
+    if len(signature_bytes) != k:
         return False
-        
-    sep_idx = decrypted_bytes.find(b'\x00', 2)
-    if sep_idx == -1:
+    sig_int = int.from_bytes(signature_bytes, "big")
+    if sig_int >= n:
         return False
-        
-    for i in range(2, sep_idx):
-        if decrypted_bytes[i] != 0xFF:
-            return False
-            
-    payload = decrypted_bytes[sep_idx+1:]
-    
-    sha256_prefix = b'\x30\x31\x30\x0d\x06\x09\x60\x86\x48\x01\x65\x03\x04\x02\x01\x05\x00\x04\x20'
-    if not payload.startswith(sha256_prefix):
+
+    em = pow(sig_int, e, n).to_bytes(k, "big")
+    if len(em) < 11 or not em.startswith(b"\x00\x01"):
         return False
-        
-    expected_hash = payload[len(sha256_prefix):]
-    actual_hash = hashlib.sha256(message_bytes).digest()
-    
-    return expected_hash == actual_hash
+    sep_idx = em.find(b"\x00", 2)
+    if sep_idx < 10:
+        return False
+    if any(value != 0xFF for value in em[2:sep_idx]):
+        return False
 
-# --- END SECURITY ---
-
-LIVE_FIELDS = ("playcount", "lastplayed", "userrating", "resume")
-RATING_IMPORT_WHITELIST = {6, 7, 8}
-_LIVE_LOCK_HANDLE = None
-UPDATE_ZIP_RE = re.compile(r"^service[._]sudosync[_-](\d+)[._](\d+)[._](\d+)(?:-([A-Za-z0-9._-]+))?\.zip$", re.IGNORECASE)
-
+    sha256_prefix = b"\x30\x31\x30\x0d\x06\x09\x60\x86\x48\x01\x65\x03\x04\x02\x01\x05\x00\x04\x20"
+    digest_info = em[sep_idx + 1:]
+    if len(digest_info) != len(sha256_prefix) + 32 or not digest_info.startswith(sha256_prefix):
+        return False
+    expected_hash = digest_info[len(sha256_prefix):]
+    return hmac.compare_digest(expected_hash, hashlib.sha256(message_bytes).digest())
 
 def log(message, level=xbmc.LOGINFO):
     xbmc.log("[SudoSync] {}".format(message), level)
@@ -342,7 +337,7 @@ def read_shared_config(base_path=None):
     try:
         data = _read_vfs_json(path)
         if not isinstance(data, dict):
-            raise ValueError("nieprawidĹ‚owy format config.json")
+            raise ValueError("nieprawidłowy format config.json")
         init = data.get("initialization") if isinstance(data.get("initialization"), dict) else {}
         data["initialization"] = {
             "completed": bool(init.get("completed", False)),
@@ -353,7 +348,7 @@ def read_shared_config(base_path=None):
         }
         return data
     except Exception as exc:
-        raise IOError("Nie moĹĽna odczytaÄ‡ wspĂłlnej konfiguracji SudoSync: {}".format(exc))
+        raise IOError("Nie moźna odczytać wspĂłlnej konfiguracji SudoSync: {}".format(exc))
 
 
 def update_shared_config(mutator_func, base_path=None):
@@ -395,7 +390,7 @@ def update_shared_config(mutator_func, base_path=None):
             
         if datetime.now(timezone.utc).timestamp() - start > 15.0:
             raise RuntimeError(
-                "Nie moĹĽna uzyskaÄ‡ blokady wspĂłlnej konfiguracji SudoSync w ciÄ…gu 15 sekund."
+                "Nie moźna uzyskać blokady wspĂłlnej konfiguracji SudoSync w ciągu 15 sekund."
             )
         xbmc.sleep(200)
 
@@ -502,7 +497,7 @@ def sync_network_settings():
             if changed:
                 log("SudoSync ID network settings forced from shared config to match the network.")
     except Exception as exc:
-        log("Nie udaĹ‚o siÄ™ zsynchronizowaÄ‡ ustawieĹ„ sieciowych SudoSync ID: {}".format(exc), xbmc.LOGWARNING)
+        log("Nie udało się zsynchronizować ustawień sieciowych SudoSync ID: {}".format(exc), xbmc.LOGWARNING)
 
 
 def select_this_as_initial_base():
@@ -516,19 +511,19 @@ def select_this_as_initial_base():
     client_id = get_or_create_client_id()
     explicit_name = addon.getSetting("client_name").strip()
     if not explicit_name:
-        raise RuntimeError("Najpierw wpisz nazwÄ™ tego urzÄ…dzenia Kodi.")
+        raise RuntimeError("Najpierw wpisz nazwę tego urządzenia Kodi.")
 
     config = read_shared_config(settings["base_path"])
     init = config.get("initialization") or {}
     if init.get("completed", False):
-        raise RuntimeError("Pierwsza synchronizacja jest juĹĽ zakoĹ„czona. Zmiana urzÄ…dzenia bazowego jest zablokowana.")
+        raise RuntimeError("Pierwsza synchronizacja jest juź zakończona. Zmiana urządzenia bazowego jest zablokowana.")
 
     base_id = str(init.get("base_client_id") or "")
     base_name = str(init.get("base_client_name") or "")
     if base_id and base_id != client_id:
         raise RuntimeError(
-            "UrzÄ…dzeniem bazowym jest juĹĽ: {}.\n\n"
-            "Najpierw uĹĽyj â€žWyczyĹ›Ä‡ wybĂłr urzÄ…dzenia bazowegoâ€ť, a dopiero potem wybierz inne Kodi.".format(
+            "Urządzeniem bazowym jest juź: {}.\n\n"
+            "Najpierw uźyj „Wyczyść wybĂłr urządzenia bazowego”, a dopiero potem wybierz inne Kodi.".format(
                 base_name or base_id[:8]
             )
         )
@@ -560,7 +555,7 @@ def clear_initial_base_selection():
     config = read_shared_config(settings["base_path"])
     init = config.get("initialization") or {}
     if init.get("completed", False):
-        raise RuntimeError("Pierwsza synchronizacja jest juĹĽ zakoĹ„czona. ZwykĹ‚e wyczyszczenie wyboru bazowego jest zablokowane.")
+        raise RuntimeError("Pierwsza synchronizacja jest juź zakończona. Zwykłe wyczyszczenie wyboru bazowego jest zablokowane.")
     def mutator(cfg):
         cfg_init = cfg.setdefault("initialization", {})
         cfg_init.update({
@@ -667,8 +662,8 @@ def check_for_update(show_notification=True, manual=False):
     result = find_latest_update()
     if result.get("available") and show_notification:
         xbmcgui.Dialog().notification(
-            "SudoSync â€” aktualizacja",
-            "DostÄ™pna {}. Ustawienia SudoSync â†’ Zainstaluj aktualizacjÄ™.".format(result.get("version", "nowsza wersja")),
+            "SudoSync — aktualizacja",
+            "Dostępna {}. Ustawienia SudoSync → Zainstaluj aktualizację.".format(result.get("version", "nowsza wersja")),
             xbmcgui.NOTIFICATION_INFO,
             9000,
         )
@@ -687,10 +682,11 @@ def _copy_vfs_to_local(src, dst):
     if os.path.exists(dst):
         os.remove(dst)
     if not xbmcvfs.copy(src, dst):
-        raise IOError("Nie udaĹ‚o siÄ™ skopiowaÄ‡ pakietu aktualizacji z: {}".format(src))
+        raise IOError("Nie udało się skopiować pakietu aktualizacji z: {}".format(src))
     if not os.path.isfile(dst) or os.path.getsize(dst) < 100:
-        raise IOError("Skopiowany pakiet aktualizacji jest pusty lub niepeĹ‚ny.")
-
+        raise IOError("Skopiowany pakiet aktualizacji jest pusty lub niepełny.")
+    if os.path.getsize(dst) > UPDATE_MAX_BYTES:
+        raise IOError("Skopiowany pakiet aktualizacji przekracza limit rozmiaru.")
 
 def _safe_zip_member(name):
     normalized = str(name or "").replace("\\", "/")
@@ -703,40 +699,79 @@ def _safe_zip_member(name):
 
 
 def _validate_update_zip(zip_path, expected_version=None):
-    # Security: Verify RSA Signature appended to the end of the ZIP file
-    # The last 256 bytes (2048-bit RSA) is the signature. The rest is the ZIP message.
     try:
         with open(zip_path, "rb") as f:
             data = f.read()
     except Exception as exc:
-        raise ValueError("Nie mozna odczytac ZIP: {}".format(exc))
-        
+        raise ValueError("Nie można odczytać ZIP: {}".format(exc))
+
     if len(data) < 256:
-        raise ValueError("Brak podpisu lub plik za krotki (ZIP < 256).")
-        
+        raise ValueError("Brak podpisu lub plik za krótki.")
+    if len(data) > UPDATE_MAX_BYTES:
+        raise ValueError("Pakiet aktualizacji przekracza limit rozmiaru.")
+
     message_bytes = data[:-256]
     signature_bytes = data[-256:]
-    
     if not _verify_rsa_pkcs1_sha256(PUBLIC_KEY_PEM, message_bytes, signature_bytes):
-        raise ValueError("Odmowa dostepu: Nieprawidlowy podpis kryptograficzny paczki! STATE UPDATE BLOCKED.")
-        
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        names = zf.namelist()
-        normalized_map = {str(name or "").replace("\\", "/"): name for name in names}
-        if not names or not all(_safe_zip_member(name) for name in normalized_map.keys() if name and not name.endswith("/")):
-            raise ValueError("Pakiet ZIP ma nieprawidĹ‚owÄ… strukturÄ™ lub zawiera niedozwolonÄ… Ĺ›cieĹĽkÄ™.")
-        manifest_name = ADDON_ID + "/addon.xml"
-        if manifest_name not in normalized_map:
-            raise ValueError("Pakiet nie zawiera {}.".format(manifest_name))
-        actual_name = normalized_map[manifest_name]
-        manifest = ET.fromstring(zf.read(actual_name))
-        if manifest.tag != "addon" or manifest.attrib.get("id") != ADDON_ID:
-            raise ValueError("To nie jest pakiet SudoSync.")
-        version = manifest.attrib.get("version") or "0.0.0"
-        if expected_version and _numeric_version(version) != _numeric_version(expected_version):
-            raise ValueError("Wersja w addon.xml ({}) nie zgadza siÄ™ z nazwÄ… pakietu ({}).".format(version, expected_version))
-        return version
+        raise ValueError("Odmowa dostępu: nieprawidłowy podpis kryptograficzny paczki. STATE UPDATE BLOCKED.")
 
+    verified_path = zip_path + ".verified"
+    try:
+        if os.path.exists(verified_path):
+            os.remove(verified_path)
+
+        total_uncompressed = 0
+        seen_names = set()
+        with zipfile.ZipFile(io.BytesIO(message_bytes), "r") as zf:
+            infos = zf.infolist()
+            if not infos or len(infos) > UPDATE_MAX_FILES:
+                raise ValueError("Pakiet ZIP ma nieprawidłową liczbę plików.")
+
+            for info in infos:
+                name = info.filename.replace("\\", "/")
+                normalized = name.rstrip("/")
+                if normalized and normalized in seen_names:
+                    raise ValueError("Pakiet ZIP zawiera zduplikowaną ścieżkę: {}".format(name))
+                if normalized:
+                    seen_names.add(normalized)
+                if not _safe_zip_member(name):
+                    raise ValueError("Niedozwolona ścieżka w ZIP: {}".format(name))
+                if info.file_size > UPDATE_MAX_MEMBER_BYTES:
+                    raise ValueError("Plik w ZIP przekracza limit rozmiaru: {}".format(name))
+                total_uncompressed += max(0, info.file_size)
+                if total_uncompressed > UPDATE_MAX_UNCOMPRESSED_BYTES:
+                    raise ValueError("Łączny rozmiar rozpakowanych danych przekracza limit.")
+                if info.file_size and info.compress_size and info.file_size > info.compress_size * 200:
+                    raise ValueError("Pakiet ZIP ma podejrzany współczynnik kompresji: {}".format(name))
+                mode = (info.external_attr >> 16) & 0xFFFF
+                if mode and (mode & 0o170000) == 0o120000:
+                    raise ValueError("Pakiet ZIP zawiera niedozwolony dowiązany plik: {}".format(name))
+
+            bad_member = zf.testzip()
+            if bad_member:
+                raise ValueError("Uszkodzony plik w ZIP: {}".format(bad_member))
+
+            manifest_name = ADDON_ID + "/addon.xml"
+            normalized_map = {str(name or "").replace("\\", "/"): name for name in zf.namelist()}
+            if manifest_name not in normalized_map:
+                raise ValueError("Pakiet nie zawiera {}.".format(manifest_name))
+            manifest = ET.fromstring(zf.read(normalized_map[manifest_name]))
+            if manifest.tag != "addon" or manifest.attrib.get("id") != ADDON_ID:
+                raise ValueError("To nie jest pakiet SudoSync.")
+            version = manifest.attrib.get("version") or "0.0.0"
+            if expected_version and _numeric_version(version) != _numeric_version(expected_version):
+                raise ValueError("Wersja w addon.xml ({}) nie zgadza się z nazwą pakietu ({}).".format(version, expected_version))
+
+        with open(verified_path, "wb") as f:
+            f.write(message_bytes)
+        return version
+    except Exception:
+        try:
+            if os.path.exists(verified_path):
+                os.remove(verified_path)
+        except Exception:
+            pass
+        raise
 
 def install_latest_update(show_dialogs=True):
     """Install the newest SudoSync package directly from the hidden shared folder.
@@ -757,8 +792,11 @@ def install_latest_update(show_dialogs=True):
     if not os.path.isdir(package_dir):
         os.makedirs(package_dir)
     local_zip = os.path.join(package_dir, filename)
+    verified_zip = local_zip + ".verified"
     _copy_vfs_to_local(remote_zip, local_zip)
     package_version = _validate_update_zip(local_zip, result.get("version"))
+    if not os.path.isfile(verified_zip):
+        raise ValueError("Brak zweryfikowanej kopii pakietu aktualizacji.")
 
     addon_path = xbmcvfs.translatePath(xbmcaddon.Addon(ADDON_ID).getAddonInfo("path"))
     addon_path = os.path.abspath(addon_path.rstrip("/\\"))
@@ -774,20 +812,20 @@ def install_latest_update(show_dialogs=True):
 
     os.makedirs(staging)
     try:
-        with zipfile.ZipFile(local_zip, "r") as zf:
+        with zipfile.ZipFile(verified_zip, "r") as zf:
             prefix = ADDON_ID + "/"
             for info in zf.infolist():
                 name = info.filename.replace("\\", "/")
                 if name.endswith("/"):
                     continue
                 if not _safe_zip_member(name):
-                    raise ValueError("Niedozwolona Ĺ›cieĹĽka w ZIP: {}".format(name))
+                    raise ValueError("Niedozwolona ścieźka w ZIP: {}".format(name))
                 rel = name[len(prefix):]
                 if not rel:
                     continue
                 target = os.path.abspath(os.path.join(staging, *rel.split("/")))
                 if os.path.commonpath([staging, target]) != os.path.abspath(staging):
-                    raise ValueError("Niedozwolona Ĺ›cieĹĽka w ZIP: {}".format(name))
+                    raise ValueError("Niedozwolona ścieźka w ZIP: {}".format(name))
                 parent = os.path.dirname(target)
                 if not os.path.isdir(parent):
                     os.makedirs(parent)
@@ -797,7 +835,7 @@ def install_latest_update(show_dialogs=True):
         staged_manifest = os.path.join(staging, "addon.xml")
         root = ET.parse(staged_manifest).getroot()
         if root.attrib.get("id") != ADDON_ID or _numeric_version(root.attrib.get("version")) != _numeric_version(package_version):
-            raise ValueError("Walidacja katalogu tymczasowego aktualizacji nie powiodĹ‚a siÄ™.")
+            raise ValueError("Walidacja katalogu tymczasowego aktualizacji nie powiodła się.")
 
         # Atomic-ish directory swap on the same local filesystem. If anything fails,
         # restore the previous add-on directory.
@@ -816,12 +854,18 @@ def install_latest_update(show_dialogs=True):
             os.rename(backup, addon_path)
         raise
 
+    for cleanup_path in (verified_zip, local_zip):
+        try:
+            if os.path.exists(cleanup_path):
+                os.remove(cleanup_path)
+        except Exception:
+            pass
     log("Self-update installed from {} -> {}".format(remote_zip, package_version))
     if show_dialogs:
         restart = xbmcgui.Dialog().yesno(
-            "SudoSync â€” aktualizacja zainstalowana",
-            "Zainstalowano wersjÄ™ {} bez otwierania ukrytego folderu .SudoSync.\n\n"
-            "Nowa wersja bÄ™dzie pewnie aktywna po ponownym uruchomieniu Kodi. UruchomiÄ‡ Kodi ponownie teraz?".format(package_version),
+            "SudoSync — aktualizacja zainstalowana",
+            "Zainstalowano wersję {} bez otwierania ukrytego folderu .SudoSync.\n\n"
+            "Nowa wersja będzie pewnie aktywna po ponownym uruchomieniu Kodi. Uruchomić Kodi ponownie teraz?".format(package_version),
             yeslabel="Uruchom ponownie",
             nolabel="PĂłĹşniej",
         )
@@ -1653,7 +1697,7 @@ def collect_live_snapshot(show_notification=False, suppress_local_changes=False,
     shared = read_shared_config(settings["base_path"])
     initialization = shared.get("initialization") or {}
     if not initialization.get("completed", False):
-        raise RuntimeError("Synchronizacja bieĹĽÄ…ca wymaga zakoĹ„czonej synchronizacji poczÄ…tkowej.")
+        raise RuntimeError("Synchronizacja bieźąca wymaga zakończonej synchronizacji początkowej.")
 
     client_id = get_or_create_client_id()
     registry = _read_live_registry(client_id, initialization)
@@ -1770,7 +1814,7 @@ def collect_live_snapshot(show_notification=False, suppress_local_changes=False,
     _write_local_json(os.path.join(_addon_profile_path(), "status.json"), status)
     if notify_local_changes and settings.get("notifications") and local_changed_items:
         xbmcgui.Dialog().notification(
-            "SudoSync â€” wysĹ‚ano zmianÄ™",
+            "SudoSync — wysłano zmianę",
             "{} poz. ({})".format(local_changed_items, _live_change_labels(local_changed_fields)),
             xbmcgui.NOTIFICATION_INFO,
             6000,
@@ -1938,7 +1982,7 @@ def build_live_report(show_notification=False, collect_first=True, suppress_loca
         shared_for_lamport.get("initialization") or {},
     )
     if len(snapshots) < 2:
-        raise RuntimeError("Synchronizacja bieĹĽÄ…ca wymaga co najmniej dwĂłch poprawnych snapshotĂłw.")
+        raise RuntimeError("Synchronizacja bieźąca wymaga co najmniej dwĂłch poprawnych snapshotĂłw.")
     waiting = _snapshots_ready_for_live(snapshots)
     if waiting:
         report = {
@@ -2001,7 +2045,7 @@ def run_live_sync_cycle(show_notification=False, suppress_local_changes=False, c
                 "active": True,
                 "playing": True,
                 "local_published": bool(collect_local),
-                "message": "Zdalne zapisy LIVE sÄ… odĹ‚oĹĽone do zakoĹ„czenia odtwarzania.",
+                "message": "Zdalne zapisy LIVE są odłoźone do zakończenia odtwarzania.",
             }
     except Exception:
         pass
@@ -2012,7 +2056,7 @@ def run_live_sync_cycle(show_notification=False, suppress_local_changes=False, c
         if not changed:
             return {"active": True, "idle": True, "applied_items": 0, "post_plan": {}}
     if not _acquire_live_lock():
-        return {"active": True, "busy": True, "message": "Inny cykl SudoSync juĹĽ trwa na tym Kodi."}
+        return {"active": True, "busy": True, "message": "Inny cykl SudoSync juź trwa na tym Kodi."}
 
     try:
         report = build_live_report(show_notification=False, collect_first=collect_local, suppress_local_changes=suppress_local_changes, notify_local_changes=notify_local_changes)
@@ -2023,7 +2067,7 @@ def run_live_sync_cycle(show_notification=False, suppress_local_changes=False, c
         if waiting:
             return {"active": True, "waiting": True, "waiting_for_clients": waiting, "applied_items": 0}
         if report.get("snapshot_read_errors"):
-            raise RuntimeError("BĹ‚Ä…d odczytu snapshotĂłw: {}".format(report.get("snapshot_read_errors")))
+            raise RuntimeError("Błąd odczytu snapshotĂłw: {}".format(report.get("snapshot_read_errors")))
 
         items = (report.get("planned_changes") or {}).get(client_id) or []
         if not items:
@@ -2034,6 +2078,7 @@ def run_live_sync_cycle(show_notification=False, suppress_local_changes=False, c
             _write_local_json(os.path.join(_addon_profile_path(), "status.json"), status)
             return {"active": True, "applied_items": 0, "post_plan": {}}
 
+        secure_map = _get_secure_local_identity_map()
         current_snapshot = snapshot_path(settings["base_path"], settings["client_name"], client_id)
         if xbmcvfs.exists(current_snapshot):
             _write_vfs_json(_live_backup_path(settings["base_path"], settings["client_name"], client_id), _read_vfs_json(current_snapshot))
@@ -2116,7 +2161,7 @@ def run_live_sync_cycle(show_notification=False, suppress_local_changes=False, c
             if delay_ms:
                 xbmc.sleep(delay_ms)
             xbmcgui.Dialog().notification(
-                "SudoSync â€” odebrano zmiany",
+                "SudoSync — odebrano zmiany",
                 "; ".join(parts),
                 xbmcgui.NOTIFICATION_INFO,
                 8000,
@@ -2138,8 +2183,8 @@ def read_local_status():
         return {
             "client_id": get_or_create_client_id(),
             "client_name": addon_settings()["client_name"],
-            "last_snapshot_at": "â€”",
-            "remote_path": "â€”",
+            "last_snapshot_at": "—",
+            "remote_path": "—",
             "counts": {"movies": 0, "episodes": 0},
             "kodi": get_kodi_info(),
         }
@@ -2344,7 +2389,7 @@ def run_dry_run(show_notification=False):
     if show_notification:
         plan = (this_client or {}).get("planned_changes") or {}
         xbmcgui.Dialog().notification(
-            "SudoSync â€” DRY RUN",
+            "SudoSync — DRY RUN",
             "WspĂłlne: {} | niejednoznaczne: {} | zmiany tutaj: {}".format(
                 summary.get("safe_shared_clusters", 0),
                 summary.get("ambiguous_clusters", 0),
@@ -2389,64 +2434,61 @@ def _planned_fields_count(items):
 
 def _get_secure_local_identity_map():
     from resources.lib.sudosync_merge import _aliases
+
     identity_map = {}
-    try:
-        movies = rpc("VideoLibrary.GetMovies", {"properties": ["file", "uniqueid", "imdbnumber"]}).get("movies", [])
-        for m in movies:
-            m_record = {"type": "movie", "ids": _normalize_ids(m.get("uniqueid"), m.get("imdbnumber"))}
-            identity_map[("movie", str(m.get("file") or ""))] = {
-                "id": m.get("movieid"),
-                "aliases": _aliases(m_record)
-            }
-    except Exception:
-        pass
-    try:
-        episodes = rpc("VideoLibrary.GetEpisodes", {"properties": ["file", "uniqueid"]}).get("episodes", [])
-        for e in episodes:
-            e_record = {"type": "episode", "ids": _normalize_ids(e.get("uniqueid"))}
-            identity_map[("episode", str(e.get("file") or ""))] = {
-                "id": e.get("episodeid"),
-                "aliases": _aliases(e_record)
-            }
-    except Exception:
-        pass
+    movies = rpc("VideoLibrary.GetMovies", {"properties": ["file", "uniqueid", "imdbnumber"]}).get("movies", [])
+    for movie in movies:
+        record = {"type": "movie", "ids": _normalize_ids(movie.get("uniqueid"), movie.get("imdbnumber"))}
+        movie_id = _safe_int(movie.get("movieid"), 0)
+        file_path = str(movie.get("file") or "")
+        if movie_id <= 0 or not file_path:
+            continue
+        identity_map[("movie", file_path)] = {"id": movie_id, "aliases": _aliases(record)}
+
+    episodes = rpc("VideoLibrary.GetEpisodes", {"properties": ["file", "uniqueid"]}).get("episodes", [])
+    for episode in episodes:
+        record = {"type": "episode", "ids": _normalize_ids(episode.get("uniqueid"))}
+        episode_id = _safe_int(episode.get("episodeid"), 0)
+        file_path = str(episode.get("file") or "")
+        if episode_id <= 0 or not file_path:
+            continue
+        identity_map[("episode", file_path)] = {"id": episode_id, "aliases": _aliases(record)}
     return identity_map
 
-def _apply_one_planned_item(item, secure_map=None):
+def _apply_one_planned_item(item, secure_map):
+    if not isinstance(secure_map, dict):
+        raise ValueError("Bezpieczna mapa lokalnej tożsamości jest wymagana.")
+
     media_type = str(item.get("type") or "")
-    local = item.get("local") if isinstance(item.get("local"), dict) else {}
     changes = item.get("changes") if isinstance(item.get("changes"), dict) else {}
-    
-    if secure_map is not None:
-        plan_file = str(item.get("file") or "")
-        plan_aliases = set(item.get("aliases") or [])
-        local_record = secure_map.get((media_type, plan_file))
-        if not local_record:
-            raise ValueError("Lokalny rekord dla {} nie istnieje w Kodi.".format(item.get("display") or "elementu"))
-        
-        local_aliases = local_record["aliases"]
-        if plan_aliases and local_aliases and not plan_aliases.intersection(local_aliases):
-            raise ValueError("ToĹĽsamoĹ›Ä‡ logiczna lokalnego rekordu nie zgadza siÄ™ ze snapshotem.")
-            
-        local_id = local_record["id"]
-    else:
-        if media_type == "movie":
-            local_id = _safe_int(local.get("movieid"), -1)
-        else:
-            local_id = _safe_int(local.get("episodeid"), -1)
-            
+    plan_file = str(item.get("file") or "")
+    plan_aliases = set(item.get("aliases") or [])
+
+    if media_type not in ("movie", "episode"):
+        raise ValueError("Nieobsługiwany typ materiału: {}".format(media_type))
+    if not plan_file:
+        raise ValueError("Plan nie zawiera lokalizacji pliku.")
+    if not plan_aliases:
+        raise ValueError("Plan nie zawiera silnego identyfikatora logicznego.")
+
+    local_record = secure_map.get((media_type, plan_file))
+    if not local_record:
+        raise ValueError("Lokalny rekord dla elementu nie istnieje w Kodi.")
+
+    local_aliases = set(local_record.get("aliases") or [])
+    if not local_aliases or not plan_aliases.intersection(local_aliases):
+        raise ValueError("Tożsamość logiczna lokalnego rekordu nie zgadza się ze snapshotem.")
+
+    local_id = _safe_int(local_record.get("id"), 0)
+    if local_id <= 0:
+        raise ValueError("Lokalny identyfikator Kodi jest nieprawidłowy.")
+
     if media_type == "movie":
-        if local_id < 0:
-            raise ValueError("Brak poprawnego movieid dla {}".format(item.get("display") or "filmu"))
         method = "VideoLibrary.SetMovieDetails"
         params = {"movieid": local_id}
-    elif media_type == "episode":
-        if local_id < 0:
-            raise ValueError("Brak poprawnego episodeid dla {}".format(item.get("display") or "odcinka"))
+    else:
         method = "VideoLibrary.SetEpisodeDetails"
         params = {"episodeid": local_id}
-    else:
-        raise ValueError("NieobsĹ‚ugiwany typ materiaĹ‚u: {}".format(media_type))
 
     for field in ("playcount", "lastplayed", "userrating", "resume"):
         if field not in changes:
@@ -2454,9 +2496,8 @@ def _apply_one_planned_item(item, secure_map=None):
         target = changes[field].get("to") if isinstance(changes[field], dict) else None
         if field == "playcount":
             params[field] = _safe_int(target, 0)
-        elif field == "userrating":
-            if target is not None:
-                params[field] = _safe_int(target, 0)
+        elif field == "userrating" and target is not None:
+            params[field] = _safe_int(target, 0)
         elif field == "lastplayed":
             params[field] = str(target or "")
         elif field == "resume":
@@ -2470,6 +2511,45 @@ def _apply_one_planned_item(item, secure_map=None):
         return {"skipped": True, "method": method, "params": params}
     result = rpc(method, params)
     return {"skipped": False, "method": method, "params": params, "result": result}
+
+INITIAL_SYNC_SESSION_VERSION = 1
+
+
+def _initial_sync_session_path():
+    return os.path.join(_addon_profile_path(), "initial_sync_session.json")
+
+
+def _initial_sync_plan_hash(items):
+    payload = json.dumps(items, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _load_initial_sync_session():
+    session = _read_local_json(_initial_sync_session_path())
+    if not isinstance(session, dict):
+        return None
+    if _safe_int(session.get("version"), 0) != INITIAL_SYNC_SESSION_VERSION:
+        return None
+    if session.get("completed"):
+        return None
+    if not isinstance(session.get("items"), list) or not session.get("client_id"):
+        return None
+    if session.get("plan_hash") != _initial_sync_plan_hash(session["items"]):
+        return None
+    return session
+
+
+def _save_initial_sync_session(session):
+    _write_local_json(_initial_sync_session_path(), session)
+
+
+def _clear_initial_sync_session():
+    path = _initial_sync_session_path()
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception as exc:
+        log("Nie można usunąć sesji wznowienia inicjalizacji: {}".format(exc), xbmc.LOGWARNING)
 
 
 def apply_initial_sync(show_notification=False):
@@ -2486,7 +2566,7 @@ def apply_initial_sync(show_notification=False):
     settings = addon_settings()
     if not is_initial_write_guard_armed():
         raise RuntimeError(
-            "Bezpiecznik zapisu nie jest uzbrojony lub wygasĹ‚. Kliknij najpierw â€žUzbrĂłj jednorazowÄ… synchronizacjÄ™ poczÄ…tkowÄ… (10 min)â€ť."
+            "Bezpiecznik zapisu nie jest uzbrojony lub wygasł. Kliknij najpierw „UzbrĂłj jednorazową synchronizację początkową (10 min)”."
         )
 
     shared_config = sync_initial_base_selection(show_notification=False)
@@ -2494,7 +2574,7 @@ def apply_initial_sync(show_notification=False):
 
     if not initialization.get("base_client_id"):
         disarm_initial_write_guard()
-        raise RuntimeError("Nie wybrano urzÄ…dzenia bazowego. UĹĽyj przycisku â€žUstaw TO Kodi jako urzÄ…dzenie bazowe pierwszej synchronizacjiâ€ť na jednym nazwanym Kodi.")
+        raise RuntimeError("Nie wybrano urządzenia bazowego. Uźyj przycisku „Ustaw TO Kodi jako urządzenie bazowe pierwszej synchronizacji” na jednym nazwanym Kodi.")
 
     # One-shot guard: consume it when the real apply attempt starts.
     disarm_initial_write_guard()
@@ -2503,10 +2583,10 @@ def apply_initial_sync(show_notification=False):
     fresh_status = collect_and_write(show_notification=False)
     report = run_dry_run(show_notification=False)
     if report.get("snapshot_read_errors"):
-        raise RuntimeError("Nie moĹĽna rozpoczÄ…Ä‡ zapisu: wystÄ™pujÄ… bĹ‚Ä™dy odczytu snapshotĂłw.")
+        raise RuntimeError("Nie moźna rozpocząć zapisu: występują błędy odczytu snapshotĂłw.")
     summary = report.get("summary") or {}
     if summary.get("rating_conflicts", 0) or summary.get("resume_conflicts", 0):
-        raise RuntimeError("Nie moĹĽna rozpoczÄ…Ä‡ zapisu: DRY RUN zawiera nierozstrzygniÄ™te konflikty ocen lub resume.")
+        raise RuntimeError("Nie moźna rozpocząć zapisu: DRY RUN zawiera nierozstrzygnięte konflikty ocen lub resume.")
 
     client_id = get_or_create_client_id()
     items = (report.get("planned_changes") or {}).get(client_id) or []
@@ -2524,7 +2604,7 @@ def apply_initial_sync(show_notification=False):
             "nothing_to_do": True,
             "enrolled": True,
             "counts": counts,
-            "message": "To Kodi jest juĹĽ zgodne z bezpiecznym stanem poczÄ…tkowym.",
+            "message": "To Kodi jest juź zgodne z bezpiecznym stanem początkowym.",
         }
 
     # Backup the exact fresh local snapshot that the plan is based on.
@@ -2621,7 +2701,7 @@ def apply_initial_sync(show_notification=False):
     if apply_report["errors"]:
         first = apply_report["errors"][0]
         raise RuntimeError(
-            "Synchronizacja zostaĹ‚a przerwana na pozycji {}: {}. Backup: {}. Raport: {}".format(
+            "Synchronizacja została przerwana na pozycji {}: {}. Backup: {}. Raport: {}".format(
                 first.get("display") or first.get("index"), first.get("error"), backup_path, report_path
             )
         )
@@ -2634,8 +2714,8 @@ def apply_initial_sync(show_notification=False):
 
     if show_notification or settings.get("notifications"):
         xbmcgui.Dialog().notification(
-            "SudoSync â€” synchronizacja poczÄ…tkowa",
-            "Zastosowano {} pozycji. PozostaĹ‚y plan na tym Kodi: {}.".format(
+            "SudoSync — synchronizacja początkowa",
+            "Zastosowano {} pozycji. Pozostały plan na tym Kodi: {}.".format(
                 len(items), (post_plan or {}).get("items", 0)
             ),
             xbmcgui.NOTIFICATION_INFO,
@@ -2706,19 +2786,29 @@ def rollback_sudosync_ids(manifest_path=None):
         manifest_path = os.path.join(_addon_profile_path(), "assign_ids_manifest.json")
     if not xbmcvfs.exists(manifest_path):
         raise RuntimeError("Brak pliku manifestu: {}".format(manifest_path))
-    manifest = _read_local_json(manifest_path)
+    manifest = _read_local_json(manifest_path) or {}
     rollbacks = 0
     errors = 0
     for entry in manifest.get("modified", []):
         best_path = entry.get("file")
         bak_path = entry.get("backup")
-        if xbmcvfs.exists(bak_path):
-            if xbmcvfs.exists(best_path):
-                xbmcvfs.delete(best_path)
-            if xbmcvfs.rename(bak_path, best_path):
-                rollbacks += 1
-            else:
-                errors += 1
+        created = bool(entry.get("created", False))
+        try:
+            if created:
+                if best_path and xbmcvfs.exists(best_path):
+                    if xbmcvfs.delete(best_path):
+                        rollbacks += 1
+                    else:
+                        errors += 1
+            elif bak_path and xbmcvfs.exists(bak_path):
+                if xbmcvfs.exists(best_path):
+                    xbmcvfs.delete(best_path)
+                if xbmcvfs.rename(bak_path, best_path):
+                    rollbacks += 1
+                else:
+                    errors += 1
+        except Exception:
+            errors += 1
     return {"rolled_back": rollbacks, "errors": errors}
 
 def preview_sudosync_ids():
@@ -2775,7 +2865,9 @@ def assign_sudosync_ids(show_notification=True):
     modified_movies = 0
     modified_episodes = 0
     
+    manifest_path = os.path.join(_addon_profile_path(), "assign_ids_manifest.json")
     manifest = {"generated_at": utc_now_precise(), "modified": [], "errors": []}
+    _write_local_json(manifest_path, manifest)
 
     def _process_item(item, kind):
         if item.get("ids"):
@@ -2837,7 +2929,8 @@ def assign_sudosync_ids(show_notification=True):
                     xbmcvfs.delete(new_path)
 
                 _refresh_item(item, kind)
-                manifest["modified"].append({"file": best_path, "backup": bak_path, "title": item.get("title")})
+                manifest["modified"].append({"file": best_path, "backup": bak_path, "created": False, "title": item.get("title")})
+                _write_local_json(manifest_path, manifest)
                 return True
             except Exception as exc:
                 manifest["errors"].append({"file": best_path, "error": str(exc)})
@@ -2850,7 +2943,8 @@ def assign_sudosync_ids(show_notification=True):
             try:
                 _write_vfs_bytes(best_path, xml_content)
                 _refresh_item(item, kind)
-                manifest["modified"].append({"file": best_path, "backup": None, "title": title})
+                manifest["modified"].append({"file": best_path, "backup": None, "created": True, "title": title})
+                _write_local_json(manifest_path, manifest)
                 return True
             except Exception as exc:
                 manifest["errors"].append({"file": best_path, "error": str(exc)})
