@@ -403,15 +403,33 @@ def update_shared_config(mutator_func, base_path=None):
     try:
         data = None
         if xbmcvfs.exists(path):
+            f = xbmcvfs.File(path)
             try:
-                data = _read_vfs_json(path)
-            except Exception:
-                pass
+                raw = bytearray(f.readBytes() if hasattr(f, 'readBytes') else f.read())
+            finally:
+                f.close()
+            if not raw:
+                raise IOError("unreadable file: plik istnieje ale jest pusty, odmawiam nadpisania")
+            try:
+                data = json.loads(raw.decode("utf-8"))
+            except ValueError:
+                raise IOError("Zabezpieczenie: plik konfiguracyjny jest zepsuty (invalid JSON).")
+            
+            # Walidacja odczytu
+            if not isinstance(data, dict):
+                raise IOError("invalid data types: plik nie jest slownikiem")
+            if "network_settings" not in data or not isinstance(data["network_settings"], dict):
+                raise IOError("missing network_settings")
+            if "initialization" not in data or not isinstance(data["initialization"], dict):
+                raise IOError("missing initialization")
+            if "sudosync_id_prefix" in data:
+                raise IOError("invalid legacy config")
                 
         if not isinstance(data, dict):
             data = {
                 "format": "SudoSync shared config",
                 "schema_version": 1,
+                "network_settings": {},
                 "initialization": {
                     "completed": False,
                     "base_client_id": "",
@@ -424,6 +442,16 @@ def update_shared_config(mutator_func, base_path=None):
         changed = mutator_func(data)
         if changed is False:
             return path
+            
+        # Walidacja zapisu (po mutacji)
+        if not isinstance(data, dict):
+            raise ValueError("invalid data types: zmutowana konfiguracja nie jest slownikiem")
+        if "network_settings" not in data or not isinstance(data["network_settings"], dict):
+            raise ValueError("missing network_settings: mutator usunal klucz")
+        if "initialization" not in data or not isinstance(data["initialization"], dict):
+            raise ValueError("missing initialization")
+        if "sudosync_id_prefix" in data:
+            raise ValueError("invalid legacy config: mutator wprowadzil stary schemat")
             
         data["revision"] = current_rev + 1
         data["updated_at"] = utc_now()
@@ -2764,9 +2792,13 @@ def apply_initial_sync(show_notification=False):
 
     post_status = collect_and_write(show_notification=False)
     post_dry = run_dry_run(show_notification=False)
-    initialization_completed = _mark_initialization_completed_if_converged(
-        post_dry, settings["base_path"]
-    )
+    
+    initialization_completed = False
+    if apply_report.get("completed"):
+        initialization_completed = _mark_initialization_completed_if_converged(
+            post_dry, settings["base_path"]
+        )
+        
     post_plan = None
     for client in post_dry.get("clients") or []:
         if client.get("id") == client_id:
