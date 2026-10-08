@@ -117,6 +117,69 @@ def write_sudosync_cfg(base_path, config_data):
     cfg_path = base_path + "SudoSync.cfg"
     return _write_json_file(cfg_path, config_data)
 
+def update_sudosync_cfg_network_settings(base_path, enabled, prefix):
+    """Update network settings under a shared inter-client lock.
+
+    Invalid/unreadable configuration is never replaced or repaired implicitly.
+    """
+    cfg_path = base_path.rstrip("/") + "/SudoSync.cfg"
+    lock_dir = cfg_path + ".lockdir"
+    lock_info = lock_dir + "/lock_info.json"
+    lock_id = "{}".format(time.time())
+    start = time.time()
+
+    while True:
+        if xbmcvfs.mkdirs(lock_dir):
+            try:
+                _write_json_file(lock_info, {"owner": lock_id, "created_at": time.time()})
+            except Exception:
+                try:
+                    xbmcvfs.rmdir(lock_dir)
+                except Exception:
+                    pass
+                raise
+            break
+
+        if time.time() - start > 15:
+            raise RuntimeError("Nie można uzyskać blokady SudoSync.cfg w ciągu 15 sekund.")
+
+        try:
+            status, info = _read_json_file(lock_info)
+            created_at = float((info or {}).get("created_at") or 0)
+            if status == "VALID" and created_at and time.time() - created_at > 60:
+                xbmcvfs.delete(lock_info)
+                xbmcvfs.rmdir(lock_dir)
+                continue
+        except Exception:
+            pass
+        xbmc.sleep(200)
+
+    try:
+        status, cfg = _read_json_file(cfg_path)
+        if status != "VALID" or not isinstance(cfg, dict):
+            raise RuntimeError("SudoSync.cfg jest nieczytelny lub nieprawidłowy; zapis został zablokowany.")
+
+        net = cfg.get("network_settings")
+        if not isinstance(net, dict):
+            raise RuntimeError("Brak prawidłowej sekcji network_settings w SudoSync.cfg.")
+
+        if not isinstance(enabled, bool) or not isinstance(prefix, str):
+            raise ValueError("Nieprawidłowy typ ustawień sieciowych.")
+
+        net["sudosync_id_enabled"] = enabled
+        net["sudosync_id_prefix"] = prefix
+        cfg["network_settings"] = net
+        if not write_sudosync_cfg(base_path, cfg):
+            raise IOError("Nie udało się zapisać SudoSync.cfg.")
+        return cfg
+    finally:
+        try:
+            if xbmcvfs.exists(lock_info):
+                xbmcvfs.delete(lock_info)
+            xbmcvfs.rmdir(lock_dir)
+        except Exception:
+            pass
+
 def is_legacy_installation(base_path):
     # Sprawdzamy czy istnieje system/config.json oraz clients/
     sys_config = base_path + "system/config.json"
