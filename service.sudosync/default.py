@@ -200,7 +200,7 @@ def apply_initial_dialog():
         disarm_initial_write_guard()
         xbmcgui.Dialog().ok(
             "SudoSync — synchronizacja początkowa",
-            "Na tym Kodi nie ma obecnie źadnych bezpiecznych zmian do zastosowania. Bezpiecznik został rozbrojony.",
+            "Na tym Kodi nie ma obecnie żadnych bezpiecznych zmian do zastosowania. Bezpiecznik został rozbrojony.",
         )
         return
 
@@ -267,7 +267,7 @@ def arm_initial_dialog():
     xbmcgui.Dialog().ok(
         "SudoSync — bezpiecznik uzbrojony",
         "Bezpiecznik jest uzbrojony na 10 minut.\n\n"
-        "Moźesz od razu, bez zamykania okna ustawień, kliknąć:\n\n"
+        "Możesz od razu, bez zamykania okna ustawień, kliknąć:\n\n"
         "„Zastosuj synchronizację początkową na TYM Kodi”.",
     )
 
@@ -351,7 +351,7 @@ def live_sync_dialog():
     if not settings.get("live_sync_enabled", True):
         xbmcgui.Dialog().ok(
             "SudoSync — synchronizacja bieźąca",
-            "Synchronizacja bieźąca jest wyłączona w ustawieniach. Włącz ją i zatwierdĹş ustawienia przyciskiem OK.",
+            "Synchronizacja bieźąca jest wyłączona w ustawieniach. Włącz ją i zatwierdź ustawienia przyciskiem OK.",
         )
         return
     xbmcgui.Dialog().notification(
@@ -472,18 +472,18 @@ def main():
             if not addon_settings().get("sudosync_id_enabled"):
                 xbmcgui.Dialog().ok(
                     "SudoSync",
-                    "Funkcja jest wyłączona. Najpierw ją włącz i zatwierdĹş opcje przyciskiem OK."
+                    "Funkcja jest wyłączona. Najpierw ją włącz i zatwierdź opcje przyciskiem OK."
                 )
                 return
                 
             preview = preview_sudosync_ids()
             if not preview:
-                xbmcgui.Dialog().ok("SudoSync", "Nie znaleziono źadnych plikĂłw wymagających przypisania ID.")
+                xbmcgui.Dialog().ok("SudoSync", "Nie znaleziono żadnych plików wymagających przypisania ID.")
                 return
                 
             if not xbmcgui.Dialog().yesno(
                 "SudoSync - własne identyfikatory",
-                "Znaleziono {} plikĂłw do zmiany (w tym np. {}).\n\nCzy na pewno chcesz nadpisać pliki .nfo?".format(
+                "Znaleziono {} plików do zmiany (w tym np. {}).\n\nCzy na pewno chcesz nadpisać pliki .nfo?".format(
                     len(preview), preview[0].get("title")
                 ),
                 yeslabel="Tak, dopisz ID",
@@ -492,7 +492,7 @@ def main():
                 return
             xbmcgui.Dialog().notification(
                 "SudoSync",
-                "Przypisuję identyfikatory. Moźe to potrwać dłuźszą chwilę...",
+                "Przypisuję identyfikatory. Może to potrwać dłuższą chwilę...",
                 xbmcgui.NOTIFICATION_INFO,
                 10000
             )
@@ -511,7 +511,7 @@ def main():
             ):
                 return
             res = rollback_sudosync_ids()
-            xbmcgui.Dialog().ok("SudoSync", "PrzywrĂłcono: {} plikĂłw. Błędy: {}".format(res.get("rolled_back", 0), res.get("errors", 0)))
+            xbmcgui.Dialog().ok("SudoSync", "Przywrócono: {} plików. Błędy: {}".format(res.get("rolled_back", 0), res.get("errors", 0)))
         else:
             show_status()
     except Exception as exc:
