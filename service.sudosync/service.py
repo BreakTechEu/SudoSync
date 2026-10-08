@@ -40,21 +40,18 @@ class SudoSyncMonitor(xbmc.Monitor):
 
     def onSettingsChanged(self):
         try:
-            from resources.lib.sudosync_core import addon_settings
-            from resources.lib.sudosync_bootstrap import read_sudosync_cfg, write_sudosync_cfg
-            
+            from resources.lib.sudosync_core import addon_settings, log
+            from resources.lib.sudosync_bootstrap import update_sudosync_cfg_network_settings
+
             settings = addon_settings()
-            base = settings["base_path"]
-            status, cfg = read_sudosync_cfg(base)
-            if status == "VALID":
-                net = cfg.get("network_settings", {})
-                if net.get("sudosync_id_enabled") != settings["sudosync_id_enabled"] or net.get("sudosync_id_prefix") != settings["sudosync_id_prefix"]:
-                    net["sudosync_id_enabled"] = settings["sudosync_id_enabled"]
-                    net["sudosync_id_prefix"] = settings["sudosync_id_prefix"]
-                    cfg["network_settings"] = net
-                    write_sudosync_cfg(base, cfg)
-        except Exception:
-            pass
+            update_sudosync_cfg_network_settings(
+                settings["base_path"],
+                settings["sudosync_id_enabled"],
+                settings["sudosync_id_prefix"],
+            )
+        except Exception as exc:
+            # Settings changes must never corrupt or silently replace shared CFG.
+            log("Nie udało się zaktualizować współdzielonych ustawień SudoSync ID: {}".format(exc), xbmc.LOGWARNING)
 
     def _mark_dirty(self):
         self.dirty = True
