@@ -33,7 +33,7 @@
         </setting>
       </group>
       <group id="3" label="32030">
-        <setting id="check_updates" type="boolean" label="32031" help="32032">
+        <setting id="check_updates" type="boolean" visible="false" label="32031" help="32032">
           <level>0</level>
           <default>true</default>
           <control type="toggle"/>
@@ -43,7 +43,7 @@
           <data>RunScript(service.sudosync,checkupdate)</data>
           <control type="button" format="action"><close>false</close></control>
         </setting>
-        <setting id="auto_install_updates" type="boolean" label="32035" help="32036">
+        <setting id="auto_install_updates" type="boolean" visible="false" label="32035" help="32036">
           <level>0</level>
           <default>false</default>
           <control type="toggle"/>
@@ -98,7 +98,7 @@
             </dependency>
           </dependencies>
         </setting>
-        <setting id="rollback_sudosync_ids" type="action" label="Wycofaj ostatnio przypisane ID">
+        <setting id="rollback_sudosync_ids" type="action" label="32067" help="32068">
           <level>0</level>
           <data>RunScript(service.sudosync,rollbackids)</data>
           <control type="button" format="action"><close>false</close></control>
