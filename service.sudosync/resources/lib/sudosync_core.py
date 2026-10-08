@@ -700,15 +700,19 @@ def _safe_zip_member(name):
 
 def _validate_update_zip(zip_path, expected_version=None):
     try:
+        file_size = os.path.getsize(zip_path)
+    except Exception as exc:
+        raise ValueError("Nie można sprawdzić rozmiaru ZIP: {}".format(exc))
+    if file_size < 256:
+        raise ValueError("Brak podpisu lub plik za krótki.")
+    if file_size > UPDATE_MAX_BYTES:
+        raise ValueError("Pakiet aktualizacji przekracza limit rozmiaru.")
+
+    try:
         with open(zip_path, "rb") as f:
             data = f.read()
     except Exception as exc:
         raise ValueError("Nie można odczytać ZIP: {}".format(exc))
-
-    if len(data) < 256:
-        raise ValueError("Brak podpisu lub plik za krótki.")
-    if len(data) > UPDATE_MAX_BYTES:
-        raise ValueError("Pakiet aktualizacji przekracza limit rozmiaru.")
 
     message_bytes = data[:-256]
     signature_bytes = data[-256:]
