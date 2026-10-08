@@ -40,18 +40,27 @@ class SudoSyncMonitor(xbmc.Monitor):
 
     def onSettingsChanged(self):
         try:
-            from resources.lib.sudosync_core import addon_settings, log
-            from resources.lib.sudosync_bootstrap import update_sudosync_cfg_network_settings
+            from resources.lib.sudosync_core import addon_settings, get_or_create_client_id, read_shared_config, log
+            from resources.lib.sudosync_bootstrap import apply_network_settings, update_sudosync_cfg_network_settings
 
             settings = addon_settings()
-            update_sudosync_cfg_network_settings(
-                settings["base_path"],
-                settings["sudosync_id_enabled"],
-                settings["sudosync_id_prefix"],
-            )
+            cfg = read_shared_config(settings["base_path"])
+            initialization = cfg.get("initialization") or {}
+            base_client_id = str(initialization.get("base_client_id") or "")
+            client_id = str(get_or_create_client_id())
+
+            # SudoSync ID is a network-wide setting. Only the explicitly selected
+            # base Kodi may publish a change; every other Kodi follows shared CFG.
+            if base_client_id and base_client_id == client_id:
+                update_sudosync_cfg_network_settings(
+                    settings["base_path"],
+                    settings["sudosync_id_enabled"],
+                    settings["sudosync_id_prefix"],
+                )
+            else:
+                apply_network_settings(cfg)
         except Exception as exc:
-            # Settings changes must never corrupt or silently replace shared CFG.
-            log("Nie udało się zaktualizować współdzielonych ustawień SudoSync ID: {}".format(exc), xbmc.LOGWARNING)
+            log("Nie udało się bezpiecznie zsynchronizować ustawień SudoSync ID: {}".format(exc), xbmc.LOGWARNING)
 
     def _mark_dirty(self):
         self.dirty = True
