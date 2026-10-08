@@ -2564,9 +2564,17 @@ def apply_initial_sync(show_notification=False):
       * no automatic/live synchronization is enabled by this function.
     """
     settings = addon_settings()
-    if not is_initial_write_guard_armed():
+    session = _load_initial_sync_session()
+    client_id = get_or_create_client_id()
+    resuming = bool(
+        isinstance(session, dict)
+        and str(session.get("client_id") or "") == str(client_id)
+        and isinstance(session.get("items"), list)
+        and session.get("plan_hash") == _initial_sync_plan_hash(session.get("items") or [])
+    )
+    if not resuming and not is_initial_write_guard_armed():
         raise RuntimeError(
-            "Bezpiecznik zapisu nie jest uzbrojony lub wygasł. Kliknij najpierw „UzbrĂłj jednorazową synchronizację początkową (10 min)”."
+            "Bezpiecznik zapisu nie jest uzbrojony lub wygasł. Uzbrój jednorazową synchronizację początkową przed zapisem."
         )
 
     shared_config = sync_initial_base_selection(show_notification=False)
@@ -2576,21 +2584,28 @@ def apply_initial_sync(show_notification=False):
         disarm_initial_write_guard()
         raise RuntimeError("Nie wybrano urządzenia bazowego. Uźyj przycisku „Ustaw TO Kodi jako urządzenie bazowe pierwszej synchronizacji” na jednym nazwanym Kodi.")
 
-    # One-shot guard: consume it when the real apply attempt starts.
-    disarm_initial_write_guard()
+    if resuming:
+        items = list(session.get("items") or [])
+        counts = _planned_fields_count(items)
+        applied_indexes = set(_safe_int(x, 0) for x in session.get("applied_indexes") or [])
+        fresh_status = {"remote_path": session.get("pre_apply_snapshot") or ""}
+        backup_path = session.get("backup_path") or ""
+    else:
+        # One-shot guard: consume it when the real apply attempt starts.
+        disarm_initial_write_guard()
 
-    # Refresh this client immediately before planning.
-    fresh_status = collect_and_write(show_notification=False)
-    report = run_dry_run(show_notification=False)
-    if report.get("snapshot_read_errors"):
-        raise RuntimeError("Nie moźna rozpocząć zapisu: występują błędy odczytu snapshotĂłw.")
-    summary = report.get("summary") or {}
-    if summary.get("rating_conflicts", 0) or summary.get("resume_conflicts", 0):
-        raise RuntimeError("Nie moźna rozpocząć zapisu: DRY RUN zawiera nierozstrzygnięte konflikty ocen lub resume.")
+        # Refresh this client immediately before planning.
+        fresh_status = collect_and_write(show_notification=False)
+        report = run_dry_run(show_notification=False)
+        if report.get("snapshot_read_errors"):
+            raise RuntimeError("Nie można rozpocząć zapisu: występują błędy odczytu snapshotów.")
+        summary = report.get("summary") or {}
+        if summary.get("rating_conflicts", 0) or summary.get("resume_conflicts", 0):
+            raise RuntimeError("Nie można rozpocząć zapisu: DRY RUN zawiera nierozstrzygnięte konflikty ocen lub resume.")
 
-    client_id = get_or_create_client_id()
-    items = (report.get("planned_changes") or {}).get(client_id) or []
-    counts = _planned_fields_count(items)
+        items = (report.get("planned_changes") or {}).get(client_id) or []
+        counts = _planned_fields_count(items)
+        applied_indexes = set()
     if not items:
         # A new client can legitimately have nothing to apply. That still means
         # its enrollment is complete: it has published a fresh LIVE snapshot and
@@ -2607,13 +2622,14 @@ def apply_initial_sync(show_notification=False):
             "message": "To Kodi jest juź zgodne z bezpiecznym stanem początkowym.",
         }
 
-    # Backup the exact fresh local snapshot that the plan is based on.
-    remote_snapshot = fresh_status.get("remote_path")
-    snapshot_data = _read_vfs_json(remote_snapshot)
-    backup_path = _backup_snapshot_path(settings["base_path"], settings["client_name"], client_id)
-    _write_vfs_json(backup_path, snapshot_data)
+    # Backup and report creation happen only for a new session.
+    if not resuming:
+        remote_snapshot = fresh_status.get("remote_path")
+        snapshot_data = _read_vfs_json(remote_snapshot)
+        backup_path = _backup_snapshot_path(settings["base_path"], settings["client_name"], client_id)
+        _write_vfs_json(backup_path, snapshot_data)
 
-    apply_report = {
+        apply_report = {
         "format": "SudoSync initial apply report",
         "schema_version": 1,
         "generated_at": utc_now(),
@@ -2623,8 +2639,48 @@ def apply_initial_sync(show_notification=False):
         "planned_counts": counts,
         "results": [],
         "errors": [],
+            "completed": False,
+            "resumed": False,
+        }
+    else:
+        apply_report = {
+            "format": "SudoSync initial apply report",
+            "schema_version": 1,
+            "generated_at": utc_now(),
+            "client": {"id": client_id, "name": settings["client_name"]},
+            "backup_path": backup_path,
+            "pre_apply_snapshot": fresh_status.get("remote_path") or "",
+            "planned_counts": counts,
+            "results": list(session.get("results") or []),
+            "errors": [],
+            "completed": False,
+            "resumed": True,
+        }
+
+    session = session or {
+        "version": INITIAL_SYNC_SESSION_VERSION,
+        "started_at": utc_now_precise(),
+        "client_id": client_id,
+        "client_name": settings["client_name"],
+        "plan_hash": _initial_sync_plan_hash(items),
+        "items": items,
+        "backup_path": backup_path,
+        "pre_apply_snapshot": fresh_status.get("remote_path") or "",
+        "applied_indexes": sorted(applied_indexes),
+        "results": list(apply_report.get("results") or []),
+        "errors": [],
         "completed": False,
     }
+    session.update({
+        "plan_hash": _initial_sync_plan_hash(items),
+        "items": items,
+        "backup_path": backup_path,
+        "applied_indexes": sorted(applied_indexes),
+        "results": list(apply_report.get("results") or []),
+        "errors": [],
+        "completed": False,
+    })
+    _save_initial_sync_session(session)
 
     secure_map = _get_secure_local_identity_map()
     journal_path = os.path.join(_addon_profile_path(), "initial_sync.journal")
@@ -2635,6 +2691,8 @@ def apply_initial_sync(show_notification=False):
         pass
 
     for index, item in enumerate(items, 1):
+        if index in applied_indexes:
+            continue
         display_name = item.get("display") or ""
         try:
             result = _apply_one_planned_item(item, secure_map)
@@ -2647,20 +2705,30 @@ def apply_initial_sync(show_notification=False):
                 "rpc": result,
                 "status": "applied",
             })
+            applied_indexes.add(index)
+            session["applied_indexes"] = sorted(applied_indexes)
+            session["results"] = list(apply_report["results"])
+            session["errors"] = []
+            _save_initial_sync_session(session)
             try:
                 with open(journal_path, "a", encoding="utf-8") as jf:
                     jf.write("[{}] APPLIED: {}\n".format(utc_now_precise(), display_name))
             except Exception:
                 pass
         except Exception as exc:
-            apply_report["errors"].append({
+            error = {
                 "index": index,
                 "display": display_name,
                 "type": item.get("type") or "",
                 "local": item.get("local") or {},
                 "error": str(exc),
                 "status": "failed",
-            })
+            }
+            apply_report["errors"].append(error)
+            session["applied_indexes"] = sorted(applied_indexes)
+            session["results"] = list(apply_report["results"])
+            session["errors"] = [error]
+            _save_initial_sync_session(session)
             try:
                 with open(journal_path, "a", encoding="utf-8") as jf:
                     jf.write("[{}] FAILED: {} - {}\n".format(utc_now_precise(), display_name, exc))
@@ -2707,6 +2775,7 @@ def apply_initial_sync(show_notification=False):
         )
 
     if apply_report["completed"]:
+        _clear_initial_sync_session()
         registry = _read_live_registry(client_id, initialization)
         registry["bootstrapped"] = True
         registry["updated_at"] = utc_now_precise()
