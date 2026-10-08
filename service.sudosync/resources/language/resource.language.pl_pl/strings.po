@@ -186,7 +186,7 @@ msgstr "Pozwala tworzyć własne ID dla wideo niewystępujących w bazach online
 
 msgctxt "#32063"
 msgid "Network Name / Prefix (leave empty for auto)"
-msgstr "Nazwa sieci / Prefiks (ZMIENIAJ TYLKO NA BAZIE)"
+msgstr "Nazwa sieci / Prefiks (zmieniaj tylko na Kodi bazowym)"
 
 msgctxt "#32064"
 msgid "Friendly name for the network. The internal NFO ID is generated once and remains permanent even if you rename this."
@@ -199,3 +199,11 @@ msgstr "Przypisz SudoSync ID wszystkim pozycjom wideo w bibliotece"
 msgctxt "#32066"
 msgid "Injects SudoSync IDs to all items in Kodi library missing a standard ID."
 msgstr "Zapisuje SudoSync ID w plikach nfo (tworząc je w razie braku) wszystkich pozycji biblioteki bez ID."
+
+msgctxt "#32067"
+msgid "Rollback last assigned IDs"
+msgstr "Wycofaj ostatnio przypisane ID"
+
+msgctxt "#32068"
+msgid "Restores the NFO files changed by the last SudoSync ID assignment. Newly created NFO files are removed."
+msgstr "Przywraca pliki NFO zmienione podczas ostatniego przypisywania ID. Nowo utworzone pliki NFO są usuwane."
