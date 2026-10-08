@@ -137,7 +137,12 @@ class TestSecurityFixes(unittest.TestCase):
                     "file": "C:/Movies/test.mkv",
                     "ids": {"tmdb": "12345"},
                     "state": {"playcount": 1, "lastplayed": "", "userrating": 0, "resume": {"position": 0, "total": 0}},
-                    "field_versions": {},
+                    "field_versions": {
+                        "playcount": {"lc": 2, "ts": "2026-10-08T10:00:00.000Z", "seq": 2, "client_id": "A"},
+                        "lastplayed": {"lc": 1, "ts": "2026-10-08T10:00:00.000Z", "seq": 1, "client_id": "A"},
+                        "userrating": {"lc": 1, "ts": "2026-10-08T10:00:00.000Z", "seq": 1, "client_id": "A"},
+                        "resume": {"lc": 1, "ts": "2026-10-08T10:00:00.000Z", "seq": 1, "client_id": "A"}
+                    },
                 }],
                 "episodes": [],
             },
@@ -150,7 +155,12 @@ class TestSecurityFixes(unittest.TestCase):
                     "file": "D:/Movies/test.mkv",
                     "ids": {"tmdb": "12345"},
                     "state": {"playcount": 0, "lastplayed": "", "userrating": 0, "resume": {"position": 0, "total": 0}},
-                    "field_versions": {},
+                    "field_versions": {
+                        "playcount": {"lc": 1, "ts": "2026-10-08T09:00:00.000Z", "seq": 1, "client_id": "B"},
+                        "lastplayed": {"lc": 1, "ts": "2026-10-08T09:00:00.000Z", "seq": 1, "client_id": "B"},
+                        "userrating": {"lc": 1, "ts": "2026-10-08T09:00:00.000Z", "seq": 1, "client_id": "B"},
+                        "resume": {"lc": 1, "ts": "2026-10-08T09:00:00.000Z", "seq": 1, "client_id": "B"}
+                    },
                 }],
                 "episodes": [],
             },
