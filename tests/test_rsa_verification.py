@@ -120,6 +120,59 @@ class TestSecurityFixes(unittest.TestCase):
         with self.assertRaises(ValueError):
             sudosync_core._apply_one_planned_item(item, None)
 
+    def test_non_base_cannot_publish_shared_sudosync_alias(self):
+        addon = MagicMock()
+        addon.getSetting.side_effect = lambda key: {
+            "sudosync_id_prefix": "EVIL",
+            "sudosync_id_prefix_last_synced": "GOOD",
+        }.get(key, "")
+        config = {
+            "initialization": {"base_client_id": "BASE"},
+            "sudosync_network_id": "NET-1234",
+            "sudosync_network_alias": "GOOD",
+        }
+
+        with patch.object(sudosync_core.xbmcaddon, "Addon", return_value=addon),              patch.object(sudosync_core, "addon_settings", return_value={"base_path": "smb://nas/share/"}),              patch.object(sudosync_core, "read_shared_config", return_value=config),              patch.object(sudosync_core, "get_or_create_client_id", return_value="PEER"),              patch.object(sudosync_core, "update_shared_config") as update_shared:
+            result = sudosync_core.get_or_sync_network_id_and_alias("smb://nas/share/")
+
+        self.assertEqual(result, "NET-1234")
+        update_shared.assert_not_called()
+        addon.setSetting.assert_any_call("sudosync_id_prefix", "GOOD")
+        addon.setSetting.assert_any_call("sudosync_id_prefix_last_synced", "GOOD")
+
+    def test_non_base_cannot_create_shared_sudosync_network_id(self):
+        addon = MagicMock()
+        addon.getSetting.side_effect = lambda key: {
+            "sudosync_id_prefix": "EVIL",
+            "sudosync_id_prefix_last_synced": "",
+        }.get(key, "")
+        config = {"initialization": {"base_client_id": "BASE"}}
+
+        with patch.object(sudosync_core.xbmcaddon, "Addon", return_value=addon),              patch.object(sudosync_core, "addon_settings", return_value={"base_path": "smb://nas/share/"}),              patch.object(sudosync_core, "read_shared_config", return_value=config),              patch.object(sudosync_core, "get_or_create_client_id", return_value="PEER"),              patch.object(sudosync_core, "update_shared_config") as update_shared:
+            with self.assertRaises(RuntimeError):
+                sudosync_core.get_or_sync_network_id_and_alias("smb://nas/share/")
+
+        update_shared.assert_not_called()
+
+    def test_base_may_publish_changed_shared_sudosync_alias(self):
+        addon = MagicMock()
+        addon.getSetting.side_effect = lambda key: {
+            "sudosync_id_prefix": "NEW",
+            "sudosync_id_prefix_last_synced": "OLD",
+        }.get(key, "")
+        config = {
+            "initialization": {"base_client_id": "BASE"},
+            "sudosync_network_id": "NET-1234",
+            "sudosync_network_alias": "OLD",
+        }
+
+        with patch.object(sudosync_core.xbmcaddon, "Addon", return_value=addon),              patch.object(sudosync_core, "addon_settings", return_value={"base_path": "smb://nas/share/"}),              patch.object(sudosync_core, "read_shared_config", return_value=config),              patch.object(sudosync_core, "get_or_create_client_id", return_value="BASE"),              patch.object(sudosync_core, "update_shared_config") as update_shared:
+            result = sudosync_core.get_or_sync_network_id_and_alias("smb://nas/share/")
+
+        self.assertEqual(result, "NET-1234")
+        update_shared.assert_called_once()
+        addon.setSetting.assert_any_call("sudosync_id_prefix_last_synced", "NEW")
+
     def test_live_plan_propagates_aliases(self):
         snapshots = [
             {
