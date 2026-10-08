@@ -60,27 +60,19 @@ def _read_json_file(filepath):
     if not xbmcvfs.exists(filepath):
         return "NOT_FOUND", None
     try:
-        f = xbmcvfs.File(filepath, 'r')
+        f = xbmcvfs.File(filepath, "r")
         data = f.read()
         f.close()
     except Exception as exc:
-        log("Cannot read JSON {}: {}".format(filepath, exc), xbmc.LOGERROR)
+        log("Nie można odczytać JSON {}: {}".format(filepath, exc), xbmc.LOGERROR)
         return "IO_ERROR", None
 
     try:
         import json
-        obj = json.loads(data)
-        return "VALID", obj
-    except json.JSONDecodeError as exc:
-        log("Cannot parse JSON {}: {}".format(filepath, exc), xbmc.LOGERROR)
-        return "INVALID", None
-        f = xbmcvfs.File(filepath, 'r')
-        data = f.read()
-        f.close()
-        return json.loads(data)
+        return "VALID", json.loads(data)
     except Exception as exc:
-        log("Cannot read JSON {}: {}".format(filepath, exc), xbmc.LOGERROR)
-        return None
+        log("Nie można sparsować JSON {}: {}".format(filepath, exc), xbmc.LOGERROR)
+        return "INVALID", None
 
 def _write_json_file(filepath, obj):
     try:
@@ -134,38 +126,77 @@ def is_legacy_installation(base_path):
 def run_migration_wizard(base_path):
     xbmcgui.Dialog().ok(
         "SudoSync - Migracja",
-        "Wykryto istniejącą instalację starszej wersji SudoSync w wybranym folderze.\n\nTwoje dotychczasowe dane i identyfikatory zostaną zachowane. SudoSync wyodrębni teraz ustawienia sieciowe do nowego pliku SudoSync.cfg."
+        "Wykryto istniejącą instalację starszej wersji SudoSync w wybranym folderze.\n\n"
+        "Dotychczasowe dane zostaną zachowane. Ustawienia zostaną wyodrębnione do nowego pliku SudoSync.cfg.",
     )
-    
-    # Wyciągamy ustawienia sieciowe, jeśli jakieś były w starym system/config.json
-    _, sys_config = _read_json_file(base_path + "system/config.json")
-    sys_config = sys_config or {}
+
+    status, sys_config = _read_json_file(base_path + "system/config.json")
+    if status == "IO_ERROR":
+        xbmcgui.Dialog().ok(
+            "SudoSync - migracja zatrzymana",
+            "Nie można odczytać starego system/config.json. Migracja została zatrzymana, aby nie nadpisać konfiguracji.",
+        )
+        return False
+    if status == "INVALID":
+        xbmcgui.Dialog().ok(
+            "SudoSync - migracja zatrzymana",
+            "Stary system/config.json jest nieprawidłowym JSON-em. Migracja została zatrzymana, aby nie utracić ustawień.",
+        )
+        return False
+    if not isinstance(sys_config, dict):
+        xbmcgui.Dialog().ok(
+            "SudoSync - migracja zatrzymana",
+            "Stary system/config.json ma nieprawidłową strukturę. Migracja została zatrzymana.",
+        )
+        return False
+
     old_net = sys_config.get("network_settings", {})
-    
-    # Jeśli nie było starych, bierzemy lokalne preferencje z addon_data 
-    # (to moźe być przypadek gdy SudoSync ID włączono lokalnie, ale nie opublikowano do starej bazy)
+    if old_net is not None and not isinstance(old_net, dict):
+        xbmcgui.Dialog().ok(
+            "SudoSync - migracja zatrzymana",
+            "Sekcja network_settings w starym config.json ma nieprawidłową strukturę.",
+        )
+        return False
+
     addon = xbmcaddon.Addon(ADDON_ID)
-    sudosync_id_enabled = old_net.get("sudosync_id_enabled", addon.getSetting("sudosync_id_enabled").strip().lower() == "true")
-    sudosync_id_prefix = old_net.get("sudosync_id_prefix", addon.getSetting("sudosync_id_prefix").strip() or "NAS")
-    
+    old_net = old_net or {}
+    sudosync_id_enabled = old_net.get(
+        "sudosync_id_enabled",
+        addon.getSetting("sudosync_id_enabled").strip().lower() == "true",
+    )
+    sudosync_id_prefix = old_net.get(
+        "sudosync_id_prefix",
+        addon.getSetting("sudosync_id_prefix").strip() or "NAS",
+    )
+    if not isinstance(sudosync_id_enabled, bool) or not isinstance(sudosync_id_prefix, str):
+        xbmcgui.Dialog().ok(
+            "SudoSync - migracja zatrzymana",
+            "Stare ustawienia SudoSync ID mają nieprawidłowe typy.",
+        )
+        return False
+
     new_cfg = {
         "format": "SudoSync configuration",
         "schema_version": 1,
         "configuration": {
             "completed": True,
-            "completed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            "completed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         },
         "network_settings": {
-            "sudosync_id_enabled": bool(sudosync_id_enabled),
-            "sudosync_id_prefix": str(sudosync_id_prefix)
-        }
+            "sudosync_id_enabled": sudosync_id_enabled,
+            "sudosync_id_prefix": str(sudosync_id_prefix),
+        },
     }
-    
     if not write_sudosync_cfg(base_path, new_cfg):
-        xbmcgui.Dialog().ok("Błąd", "Nie udało się zapisać zmigrowanej konfiguracji do SudoSync.cfg")
+        xbmcgui.Dialog().ok("SudoSync - błąd", "Nie udało się zapisać migrowanej konfiguracji.")
         return False
-        
-    xbmcgui.Dialog().notification("Migracja", "Migracja zakończona sukcesem.", xbmcgui.NOTIFICATION_INFO, 5000)
+
+    xbmcgui.Dialog().notification(
+        "SudoSync - migracja",
+        "Migracja zakończona pomyślnie.",
+        xbmcgui.NOTIFICATION_INFO,
+        5000,
+    )
     return True
 
 def run_new_config_wizard(base_path):
@@ -312,28 +343,38 @@ def run_bootstrap():
         return False
 
 def check_and_enforce_updates_before_bootstrap():
-    """Wymuszona aktualizacja przez bootstrap."""
+    """Install an available signed update before starting operational code.
+
+    A failed update check/install is fail-closed: the service does not continue
+    with an older installation when a candidate update cannot be safely handled.
+    """
     from resources.lib.sudosync_core import check_for_update, install_latest_update
-    # Sprawdzamy czy base_path jest na tyle zdatny (jeśli to puste albo stary dummy, to pominie)
+
     base_path = get_base_path()
     if not base_path or base_path == "smb://192.168.69.100/Wideo/.SudoSync/":
-        return False # brak ścieźki do folderu aktualizacji
-        
-    try:
-        # Wymuszamy ominięcie ustawień (ustawienia lokalne ignorujemy dla instalacji aktualizacji z NAS)
-        result = check_for_update(show_notification=False, manual=False)
-        if result.get("available"):
-            installed = install_latest_update(show_dialogs=False)
-            if installed.get("installed"):
-                xbmcgui.Dialog().notification(
-                    "SudoSync zaktualizowano",
-                    "Zainstalowano {}. Kodi zostanie zrestartowane, aby wczytac nowa wersje.".format(installed.get("version")),
-                    xbmcgui.NOTIFICATION_INFO,
-                    10000,
-                )
-                xbmc.sleep(2000)
-                xbmc.executebuiltin("RestartApp")
-                return True
-    except Exception as exc:
-        log("Błąd wymuszonej aktualizacji: {}".format(exc), xbmc.LOGWARNING)
-    return False
+        return False
+
+    result = check_for_update(show_notification=False, manual=False)
+    if result.get("error"):
+        raise RuntimeError("Nie można bezpiecznie sprawdzić aktualizacji: {}".format(result["error"]))
+    if not result.get("available"):
+        return False
+
+    installed = install_latest_update(show_dialogs=False)
+    if not installed.get("installed"):
+        raise RuntimeError(
+            "Wykryto nowszą wersję {}, ale nie udało się jej bezpiecznie zainstalować.".format(
+                result.get("version") or "nieznaną"
+            )
+        )
+
+    xbmcgui.Dialog().notification(
+        "SudoSync zaktualizowano",
+        "Zainstalowano {}. Nowa wersja zostanie aktywowana po restarcie Kodi.".format(
+            installed.get("version")
+        ),
+        xbmcgui.NOTIFICATION_INFO,
+        10000,
+    )
+    return True
+
