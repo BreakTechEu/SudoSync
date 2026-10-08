@@ -2832,18 +2832,32 @@ def get_or_sync_network_id_and_alias(base_path=None):
     settings = addon_settings()
     base = base_path or settings["base_path"]
     config = read_shared_config(base)
-    
+
     local_prefix = addon.getSetting("sudosync_id_prefix").strip()
     last_synced = addon.getSetting("sudosync_id_prefix_last_synced").strip()
-    
+    client_id = get_or_create_client_id()
+    initialization = config.get("initialization") if isinstance(config.get("initialization"), dict) else {}
+    base_client_id = str(initialization.get("base_client_id") or "")
+    is_base_client = bool(base_client_id and base_client_id == str(client_id))
+
     network_id = config.get("sudosync_network_id")
     if not network_id:
+        # Only the explicitly selected base Kodi may create the shared network
+        # identity. A peer must never publish its local prefix as the authority.
+        if not is_base_client:
+            raise RuntimeError(
+                "Nie ustalono jeszcze wspólnego SudoSync ID. "
+                "Najpierw ustaw urządzenie bazowe i zakończ jego konfigurację."
+            )
+
         if local_prefix:
             generated_id = local_prefix
         else:
             import random, string
-            generated_id = "NET-" + "".join(random.choice(string.ascii_uppercase + string.digits) for _ in range(4))
-        
+            generated_id = "NET-" + "".join(
+                random.choice(string.ascii_uppercase + string.digits) for _ in range(4)
+            )
+
         def mutator1(cfg):
             if not cfg.get("sudosync_network_id"):
                 cfg["sudosync_network_id"] = generated_id
@@ -2851,7 +2865,7 @@ def get_or_sync_network_id_and_alias(base_path=None):
                 cfg["sudosync_network_alias_ts"] = utc_now()
                 return True
             return False
-            
+
         update_shared_config(mutator1, base)
         config = read_shared_config(base)
         network_id = config.get("sudosync_network_id") or generated_id
@@ -2859,20 +2873,24 @@ def get_or_sync_network_id_and_alias(base_path=None):
         addon.setSetting("sudosync_id_prefix", alias)
         addon.setSetting("sudosync_id_prefix_last_synced", alias)
         return network_id
-        
-    shared_alias = config.get("sudosync_network_alias", "")
-    
-    if local_prefix != last_synced:
+
+    shared_alias = str(config.get("sudosync_network_alias") or "").strip()
+
+    if is_base_client and local_prefix != last_synced:
+        # Only the selected base Kodi may publish a deliberate local prefix change.
         def mutator2(cfg):
             cfg["sudosync_network_alias"] = local_prefix
             cfg["sudosync_network_alias_ts"] = utc_now()
             return True
         update_shared_config(mutator2, base)
         addon.setSetting("sudosync_id_prefix_last_synced", local_prefix)
-    elif shared_alias != local_prefix:
-        addon.setSetting("sudosync_id_prefix", shared_alias)
-        addon.setSetting("sudosync_id_prefix_last_synced", shared_alias)
-        
+    else:
+        # Non-base clients always follow the shared alias and can never overwrite it.
+        if shared_alias and local_prefix != shared_alias:
+            addon.setSetting("sudosync_id_prefix", shared_alias)
+        if shared_alias and last_synced != shared_alias:
+            addon.setSetting("sudosync_id_prefix_last_synced", shared_alias)
+
     return network_id
 
 def rollback_sudosync_ids(manifest_path=None):
