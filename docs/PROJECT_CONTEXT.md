@@ -10,9 +10,9 @@ nadrzędna jest bieżąca prośba; potem zaktualizuj te pliki.
 
 - Projekt: `BreakTechEu/SudoSync`.
 - `master` jest docelową gałęzią główną dla v2.
-- `v1-stable` to działająca, stabilna wersja v1 i jest tylko do odczytu.
+- `v1-stable` to gałąź stabilnej wersji SudoSync 1.0.0 i jest tylko do odczytu.
 - Rozwój v2 prowadzimy na `v2/rewrite-2026-10-10`, a do `master` integrujemy
-  v2 uzgodnioną ścieżką przeglądu. Nie traktuj `master` jako gałęzi v1 ani
+  v2 uzgodnioną ścieżką przeglądu. Nie traktuj `master` jako gałęzi stabilnej wersji SudoSync 1.0.0 ani
   `v1-stable` jako celu zmian v2.
 - Stan gałęzi, kodu i testów sprawdzaj na początku sesji — ten plik nie jest
   źródłem aktualnego statusu Git.
@@ -66,11 +66,11 @@ nadrzędna jest bieżąca prośba; potem zaktualizuj te pliki.
   SudoSync ID, pomiń rekord zamiast dopasowywać go po tytule.
 - Przed zmianami wymagany jest podgląd, jawne zatwierdzenie, kopia i
   sprawdzenie wyniku. Podczas odtwarzania odraczaj zdalne zmiany.
-- Zachowaj model LIVE v1: każde Kodi publikuje własny snapshot, zmiany każdego
+- Zachowaj model LIVE z SudoSync 1.0.0: każde Kodi publikuje własny snapshot, zmiany każdego
   pola mają wersję logiczną, a uruchomione Kodi uzgadnia je z peer snapshotami
   niezależnie od współbieżności startu. Zachowuj zwycięską wersję przy
   replikacji, aby uniknąć pętli. Użytkownik wymaga catch-up mimo długich
-  odstępów między uruchomieniami. W sprawdzonym v1 snapshot peer starszy niż
+  odstępów między uruchomieniami. W sprawdzonym SudoSync 1.0.0 snapshot peer starszy niż
   7 dni powoduje błąd odczytu, który zatrzymuje cykl LIVE; nie przenoś tego
   ograniczenia do v2 bez zachowania catch-up po długiej przerwie.
 - Przy wykryciu nowego ZIP-a aktualizacji, który nie przejdzie weryfikacji,
@@ -107,7 +107,7 @@ nadrzędna jest bieżąca prośba; potem zaktualizuj te pliki.
   `build_kodi_v2_runtime`, który łączy adapter JSON-RPC z czytaniem NFO przez
   Kodi VFS. Testy VFS, runtime i JSON-RPC przeszły (33 testy, 1 pominięty z
   powodu braku uprawnień Windows do tworzenia symlinków). Etap zapisano w
-  commicie `47fb544` na gałęzi rozwoju. `service.py` nadal używa v1.
+  commicie `47fb544` na gałęzi rozwoju. `service.py` nadal używa logiki SudoSync 1.0.0.
 - Uzgodniony model pracy Kodi jest sekwencyjny: w danej chwili działa tylko
   jedna usługa SudoSync na urządzeniu Kodi. Fizyczny test blokady między
   urządzeniami nie jest warunkiem implementacji ani zwykłego testu
@@ -115,7 +115,7 @@ nadrzędna jest bieżąca prośba; potem zaktualizuj te pliki.
   o równoczesną pracę usług Kodi. Nie pytaj ponownie o tę decyzję.
 - Integracja startowa: `service.py` wywołuje runtime v2 do odzyskiwania
   przerwanej transakcji i podglądu diagnostycznego. Zwykła synchronizacja nadal
-  działa ścieżką v1; nie jest to jeszcze synchronizacja v2 end-to-end.
+  działa ścieżką SudoSync 1.0.0; nie jest to jeszcze synchronizacja v2 end-to-end.
 - Następny etap: dokończyć bezpieczny przepływ podglądu, jawnego zatwierdzenia,
   transakcji i cyklu synchronizacji v2 zgodnie z `V2_DESIGN.md`. Potem sprawdzić
   synchronizację kolejno na urządzeniach Kodi.
