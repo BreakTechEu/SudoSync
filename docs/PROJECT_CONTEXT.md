@@ -107,7 +107,7 @@ nadrzędna jest bieżąca prośba; potem zaktualizuj te pliki.
   `build_kodi_v2_runtime`, który łączy adapter JSON-RPC z czytaniem NFO przez
   Kodi VFS. Testy VFS, runtime i JSON-RPC przeszły (33 testy, 1 pominięty z
   powodu braku uprawnień Windows do tworzenia symlinków). Etap zapisano w
-  commicie `47fb544` na gałęzi rozwoju. `service.py` nadal używa silnika v1.
+  commicie `47fb544` na gałęzi rozwoju. `service.py` nadal używa dotychczasowego silnika v1 (linia 1.x).
 - Uzgodniony model pracy Kodi jest sekwencyjny: w danej chwili działa tylko
   jedna usługa SudoSync na urządzeniu Kodi. Fizyczny test blokady między
   urządzeniami nie jest warunkiem implementacji ani zwykłego testu
@@ -115,7 +115,7 @@ nadrzędna jest bieżąca prośba; potem zaktualizuj te pliki.
   o równoczesną pracę usług Kodi. Nie pytaj ponownie o tę decyzję.
 - Integracja startowa: `service.py` wywołuje runtime v2 do odzyskiwania
   przerwanej transakcji i podglądu diagnostycznego. Zwykła synchronizacja nadal
-  działa ścieżką v1; nie jest to jeszcze synchronizacja v2 end-to-end.
+  działa ścieżką dotychczasowego silnika v1 (linia 1.x); nie jest to jeszcze synchronizacja v2 end-to-end.
 - Następny etap: dokończyć bezpieczny przepływ podglądu, jawnego zatwierdzenia,
   transakcji i cyklu synchronizacji v2 zgodnie z `V2_DESIGN.md`. Potem sprawdzić
   synchronizację kolejno na urządzeniach Kodi.
