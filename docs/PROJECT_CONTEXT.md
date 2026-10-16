@@ -125,3 +125,20 @@ nadrzędna jest bieżąca prośba; potem zaktualizuj te pliki.
   zdalną. Na początku kolejnej sesji sprawdź stan GitHuba i bezpiecznie
   zsynchronizuj checkout przed dalszymi commitami. Nie resetuj go w ciemno.
 - `master` i `v1-stable` pozostają nietknięte.
+
+
+## Stan przekazania — 2026-10-16
+
+- Gałąź `v2/rewrite-2026-10-10` została wcześniej scalona do `master`; aktywny rozwój toczy się na `master` (`v1-stable` pozostaje tylko do odczytu).
+- Domknięto pełny cykl synchronizacji i inicjalizacji w runtime v2 (`sudosync_v2/runtime.py`, `engine.py`, `planning.py`, `initialization.py`, `snapshot.py`):
+  - `build_sync_plan` i `build_initialization_plan` dołączają `target_versions` do każdej zmiany, a `apply_plan_to_snapshot` aktualizuje lokalny snapshot wraz ze zwycięskimi wersjami pól (ochrona przed pętlą zwrotną / feedback-loop guard).
+  - `build_snapshot` przypisuje wersję zerową (`lc=0, seq=0`) nowo odkrytym pozycjom przy istniejącym snapshocie oraz obsługuje `suppress_local_changes` podczas skanowania biblioteki (z zachowaniem jawnej zmiany istniejącej oceny `userrating`).
+  - `V2RuntimeComponents` udostępnia metody `sync_cycle()`, `publish_local_snapshot()`, `initialization_preview()` oraz `apply_initialization()`.
+- W `sudosync_core.py` (ścieżka aktywna w UI/tle Kodi) naprawiono błędy blokujące realne użycie na urządzeniach Kodi:
+  - Zainicjalizowano brakującą mapę `secure_map = _get_secure_local_identity_map()` w `run_live_sync_cycle()` (eliminacja `NameError` przy zapisie zmian do Kodi).
+  - Usunięto odrzucanie snapshotów starszych niż 7 dni w `_validate_snapshot` i `_validate_remote_snapshot` (urządzenie włączone po dłuższej przerwie normalnie dogania stan sieci) oraz poprawiono porównywanie dat UTC (`tzinfo=timezone.utc`).
+  - `read_remote_snapshots()` ignoruje pliki w formacie `SudoSync v2 snapshot`, dzięki czemu koegzystencja katalogu v2 nie powoduje fałszywych błędów odczytu snapshotów.
+  - `_record()` oraz `_get_secure_local_identity_map()` łączą identyfikatory z JSON-RPC Kodi z identyfikatorami z plików `.nfo` (w tym `sudosync`), zamiast pomijać `.nfo`, gdy Kodi zwróci częściowy zestaw ID.
+- Potwierdzone testy jednostkowe: 181 testów uruchomionych (`python -m unittest discover -s tests -p "test_*.py" -v`), 178 zaliczonych, 3 pominięte (testy symlinków na Windows).
+- Zbudowano lokalną paczkę instalacyjną ZIP gotową do bezpośrednich testów beta na urządzeniach Kodi użytkownika (pliki `*.zip` są wykluczone w `.gitignore`).
+
