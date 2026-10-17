@@ -16,7 +16,7 @@ nadrzędna jest bieżąca prośba; potem zaktualizuj te pliki.
   `v1-stable` jako celu zmian v2.
 - Stan gałęzi, kodu i testów sprawdzaj na początku sesji — ten plik nie jest
   źródłem aktualnego statusu Git.
-- Nie scalaj PR ani nie publikuj wydania bez wyraźnej zgody Romana.
+- Aktualizuj wydania i paczki ZIP na GitHubie tak, aby inne narzędzia AI miały dostęp do aktualnego stanu kodu i artefaktów.
 - Audyt zewnętrzny wykonuj dopiero przed przekazaniem zmian do `master` albo
   przygotowaniem wtyczki do testu na rzeczywistym Kodi.
 
@@ -147,5 +147,5 @@ nadrzędna jest bieżąca prośba; potem zaktualizuj te pliki.
   - `_initial_snapshot_and_analyse` publikuje snapshot do v2 wyłącznie po zakończeniu inicjalizacji (`init_completed=True`), a `_sync_v2_after_initial_apply` publikuje stan po inicjalizacji z jawnym `suppress_local_changes=True`.
   - Dodano backoff `_live_retry_delay_seconds` (minimum 30 s lub czas cyklu pollingu) po błędzie lub blokadzie w `_execute_integrated_live_cycle` bez kasowania flag `dirty`.
   - Potwierdzone testy: 219 testów (w tym nowy zestaw `tests/test_v2_first_publish_and_backoff.py`), 216 zaliczonych, 3 pominięte (symlinki Windows).
-- Domknięto backoff pętli usługi przy wyniku `busy` bez błędu i blokady (`LIVE_BUSY_RETRY_SECONDS = 10` w `service.sudosync/service.py`) z zachowaniem wszystkich flag `dirty`. Dodano instrukcję bezpiecznego ręcznego testu na urządzeniu Kodi w pliku [`TEST_NA_KODI.md`](TEST_NA_KODI.md). Bieżący zestaw testów jednostkowych liczy 223 testy (`tests/test_v2_busy_backoff.py`), w tym 220 zaliczonych i 3 pominięte (symlinki Windows). Z aktualnego commitu na gałęzi `master` (hash do sprawdzenia przez `git log -1`) zbudowano nową lokalną, niepodpisaną paczkę testową `service.sudosync-2.0.0.zip`.
+- Domknięto backoff pętli usługi przy wyniku `busy` bez błędu i blokady (`LIVE_BUSY_RETRY_SECONDS = 10` w `service.sudosync/service.py`) z zachowaniem wszystkich flag `dirty`. Dodano instrukcję bezpiecznego ręcznego testu na urządzeniu Kodi w pliku [`TEST_NA_KODI.md`](TEST_NA_KODI.md). Bieżący zestaw testów jednostkowych liczy 223 testy (`tests/test_v2_busy_backoff.py`), w tym 220 zaliczonych i 3 pominięte (symlinki Windows). Z aktualnego commitu na gałęzi `master` zbudowano i opublikowano na GitHubie (w GitHub Releases `v2.0.0`) niepodpisaną paczkę testową `service.sudosync-2.0.0.zip`. Test na Kodi odbywa się w scenariuszu czystej instalacji po zmianie nazwy starego folderu `.SudoSync` na NAS i usunięciu poprzedniej wersji ze wszystkich urządzeń Kodi.
 
