@@ -148,4 +148,7 @@ nadrzędna jest bieżąca prośba; potem zaktualizuj te pliki.
   - Dodano backoff `_live_retry_delay_seconds` (minimum 30 s lub czas cyklu pollingu) po błędzie lub blokadzie w `_execute_integrated_live_cycle` bez kasowania flag `dirty`.
   - Potwierdzone testy: 219 testów (w tym nowy zestaw `tests/test_v2_first_publish_and_backoff.py`), 216 zaliczonych, 3 pominięte (symlinki Windows).
 - Domknięto backoff pętli usługi przy wyniku `busy` bez błędu i blokady (`LIVE_BUSY_RETRY_SECONDS = 10` w `service.sudosync/service.py`) z zachowaniem wszystkich flag `dirty`. Dodano instrukcję bezpiecznego ręcznego testu na urządzeniu Kodi w pliku [`TEST_NA_KODI.md`](TEST_NA_KODI.md). Bieżący zestaw testów jednostkowych liczy 223 testy (`tests/test_v2_busy_backoff.py`), w tym 220 zaliczonych i 3 pominięte (symlinki Windows). Z aktualnego commitu na gałęzi `master` zbudowano i opublikowano na GitHubie (w GitHub Releases `v2.0.0`) niepodpisaną paczkę testową `service.sudosync-2.0.0.zip`. Test na Kodi odbywa się w scenariuszu czystej instalacji po zmianie nazwy starego folderu `.SudoSync` na NAS i usunięciu poprzedniej wersji ze wszystkich urządzeń Kodi.
+- Polityka wydań i wersjonowania (od 2026-10-17):
+  - Kolejne paczki na GitHub Releases są publikowane jako pełne wydania (**Release**, bez flagi `Pre-release`, jako `Latest`), aby endpoint `/releases/latest` zawsze zwracał najnowszą wersję.
+  - Większe zmiany otrzymują kolejny numer na trzeciej pozycji (`patch`), np. `2.0.1`, `2.0.2`, ..., `2.0.12`.
 
