@@ -113,5 +113,6 @@ nadrzędna jest bieżąca prośba; potem zaktualizuj te pliki.
 - Polityka wydań i wersjonowania (od 2026-10-17):
   - Kolejne paczki na GitHub Releases są publikowane jako pełne wydania (**Release**, bez flagi `Pre-release`, jako `Latest`), aby endpoint `/releases/latest` zawsze zwracał najnowszą wersję.
   - Większe zmiany otrzymują kolejny numer na trzeciej pozycji (`patch`), np. `2.0.1`, `2.0.2`, ..., `2.0.12`.
+  - Stare paczki `.zip` (`service.sudosync-*.zip`) w lokalnym katalogu roboczym nie są automatycznie usuwane przy budowaniu kolejnych wersji — pozostają na dysku aż do ręcznego usunięcia przez użytkownika.
 
 
