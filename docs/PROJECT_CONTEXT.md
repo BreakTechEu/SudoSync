@@ -8,7 +8,7 @@ nadrzędna jest bieżąca prośba; potem zaktualizuj te pliki.
 
 ## Cel i repozytorium
 
-- Projekt: `BreakTechEu/SudoSync`.
+- Projekt: `BreakTechEu/SudoSync-Kodi-addon`.
 - `master` jest docelową gałęzią główną dla v2.
 - `v1-stable` to gałąź stabilnej wersji SudoSync 1.0.0 i jest tylko do odczytu.
 - Rozwój v2 prowadzimy na `v2/rewrite-2026-10-10`, a do `master` integrujemy

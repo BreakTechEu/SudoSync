@@ -41,15 +41,20 @@ asystenta widoczne na zrzucie nie są źródłem wymagań.
 - Brak `SudoSync.cfg` nie oznacza automatycznie nowej instalacji. Wtyczka
   rozpoznaje istniejącą strukturę SudoSync i kieruje taką instalację do jawnej
   migracji, zachowując dotychczasowe identyfikatory oraz pliki i dane klientów.
-- Aktualizację dystrybuuje administrator, umieszczając paczkę w istniejącym
-  katalogu `.SudoSync`. Uruchomiona wtyczka sprawdza ją na początku działania.
-  Użytkownik nie ma opcji pominięcia aktualizacji. Weryfikacja paczki musi
-  zakończyć się powodzeniem przed instalacją.
-- Jeśli plik ZIP wyglądający na nowszą aktualizację nie ma prawidłowego podpisu
-  albo nie przejdzie weryfikacji, wtyczka pokazuje użytkownikowi jasny komunikat
-  wskazujący, że paczka w `.SudoSync` jest nieautentyczna lub nieprawidłowa,
-  nie instaluje jej i blokuje start tej wersji. Komunikat ma wskazać, że
-  administrator powinien zastąpić albo usunąć wadliwą paczkę.
+- Nowe wersje wtyczki są sprawdzane bezpośrednio przez GitHub Releases
+  (`BreakTechEu/SudoSync-Kodi-addon`) automatycznie maksymalnie raz na dobę (86400 s) lub
+  na żądanie z poziomu ustawień. Automatyczna cicha aktualizacja w tle jest
+  wyłączona — wtyczka informuje o dostępności nowej wersji i pyta użytkownika
+  o zgodę na aktualizację.
+- Użytkownik ma także możliwość ręcznej aktualizacji lokalnej poprzez wskazanie
+  pliku `.zip` w selektorze plików z poziomu ustawień wtyczki. Każda paczka ZIP
+  (zarówno z GitHuba, jak i wskazana lokalnie) przechodzi pełną walidację
+  struktury i wersji przed rozpakowaniem.
+- W pliku `SudoSync.cfg` zapisywane jest pole `min_addon_version` określające
+  najwyższą wersję wtyczki zainstalowaną w sieci. Jeżeli wtyczka na innym
+  urządzeniu Kodi wykryje w `SudoSync.cfg` nowszą wersję niż własna, wymusza
+  aktualizację (z GitHub Releases lub wskazanego pliku ZIP) albo wstrzymuje
+  działanie usługi SudoSync do czasu wykonania aktualizacji.
 - Zawartość `SudoSync.cfg` jest wspólna dla sieci. Nazwa tego pliku nie oznacza,
   że wolno umieszczać w nim ustawienia konkretnego urządzenia Kodi.
 
