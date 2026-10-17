@@ -48,10 +48,8 @@ nadrzędna jest bieżąca prośba; potem zaktualizuj te pliki.
 - Konfiguracja sieciowa jest wspólna. ID klienta, nazwa i ustawienia
   konkretnego Kodi pozostają lokalne i nie mogą być kopiowane przez plik
   wspólny.
-- Aktualizacja jest dystrybuowana przez paczkę umieszczoną przez
-  administratora w `.SudoSync` i sprawdzaną przez uruchomioną wtyczkę.
-  Użytkownik nie może jej pominąć. Nie dodawaj funkcji wgrywania paczki przez
-  wtyczkę bez osobnego polecenia.
+- Aktualizacje są sprawdzane na GitHub Releases (`BreakTechEu/SudoSync-Kodi-addon`) najwyżej raz na dobę (lub ręcznie w ustawieniach) i instalowane wyłącznie po jawnej zgodzie użytkownika, albo instalowane ręcznie ze wskazanego przez użytkownika pliku `.zip`. Wycofano dawny mechanizm aktualizacji ze wspólnego folderu `.SudoSync` na NAS.
+- W `SudoSync.cfg` zapisywana jest minimalna wymagana wersja wtyczki w sieci (`min_addon_version`). Urządzenie ze starszą wersją wtyczki jest blokowane przy starcie (oraz podczas odświeżania dzierżawy sesji) do czasu zaktualizowania wtyczki.
 - Synchronizowane pola: licznik odtworzeń, data ostatniego odtworzenia,
   pozycja wznowienia i ocena użytkownika dla istniejących filmów i odcinków.
 - Zmiany biblioteki wykonuj wyłącznie przez Kodi JSON-RPC. Nigdy nie edytuj
@@ -73,9 +71,7 @@ nadrzędna jest bieżąca prośba; potem zaktualizuj te pliki.
   odstępów między uruchomieniami. W sprawdzonym silniku v1 snapshot peer starszy niż
   7 dni powoduje błąd odczytu, który zatrzymuje cykl LIVE; nie przenoś tego
   ograniczenia do v2 bez zachowania catch-up po długiej przerwie.
-- Przy wykryciu nowego ZIP-a aktualizacji, który nie przejdzie weryfikacji,
-  pokaż jasny komunikat użytkownikowi, odmów instalacji i zatrzymaj start
-  wtyczki do czasu zastąpienia lub usunięcia paczki.
+- Każda paczka aktualizacji ZIP (pobrana z GitHub Releases lub wskazana lokalnie) musi przejść walidację struktury i manifestu `addon.xml` (`_validate_addon_zip_package`) przed rozpakowaniem do katalogu tymczasowego i atomową podmianą z kopią zapasową.
 
 ## Zasady współpracy
 
@@ -90,44 +86,14 @@ nadrzędna jest bieżąca prośba; potem zaktualizuj te pliki.
   pozostały etap. Wyraźnie odróżniaj stan lokalny od tego, co jest na GitHubie.
 
 
-## Stan przekazania — 2026-10-12
+## Stan przekazania — 2026-10-12 (Zapis historyczny z etapu przejściowego)
 
-- Aktualny kod rozwoju znajduje się na GitHubie w `v2/rewrite-2026-10-10`.
-  Zmiana adaptera JSON-RPC łączy dostępne identyfikatory z Kodi z
-  identyfikatorami odczytanymi z plików `.nfo` (obsługiwane
-  `<uniqueid type="…">`, filmowe `<tmdbid>` i legacy IMDb
-  `<id>tt…</id>`). Sprzeczne identyfikatory zatrzymują odczyt zamiast
-  automatycznego dopasowania.
-- Potwierdzone: 13 testów `tests/test_sudosync_v2_kodi_rpc.py` przeszło
-  lokalnie. To testy adaptera, nie test end-to-end na Kodi.
-- Ograniczenie: `KodiJsonRpcAdapter` nie obsługuje jeszcze zwykłej
-  synchronizacji v2 end-to-end. Nie budować ZIP-a ani nie deklarować gotowości
-  do testu na Kodi.
-- Bieżący etap lokalny: dodano `KodiVFSMetadataReader` i kompozytor
-  `build_kodi_v2_runtime`, który łączy adapter JSON-RPC z czytaniem NFO przez
-  Kodi VFS. Testy VFS, runtime i JSON-RPC przeszły (33 testy, 1 pominięty z
-  powodu braku uprawnień Windows do tworzenia symlinków). Etap zapisano w
-  commicie `47fb544` na gałęzi rozwoju. `service.py` nadal używa dotychczasowego silnika v1 (linia 1.x).
-- Uzgodniony model pracy Kodi jest sekwencyjny: w danej chwili działa tylko
-  jedna usługa SudoSync na urządzeniu Kodi. Fizyczny test blokady między
-  urządzeniami nie jest warunkiem implementacji ani zwykłego testu
-  funkcjonalnego. Jest potrzebny wyłącznie po ewentualnym rozszerzeniu projektu
-  o równoczesną pracę usług Kodi. Nie pytaj ponownie o tę decyzję.
-- Integracja startowa: `service.py` wywołuje runtime v2 do odzyskiwania
-  przerwanej transakcji i podglądu diagnostycznego. Zwykła synchronizacja nadal
-  działa ścieżką dotychczasowego silnika v1 (linia 1.x); nie jest to jeszcze synchronizacja v2 end-to-end.
-- Następny etap: dokończyć bezpieczny przepływ podglądu, jawnego zatwierdzenia,
-  transakcji i cyklu synchronizacji v2 zgodnie z `V2_DESIGN.md`. Potem sprawdzić
-  synchronizację kolejno na urządzeniach Kodi.
-- Gałąź GitHub została zaktualizowana przez integrację GitHub, ponieważ
-  lokalny Git nie rozwiązywał `github.com`. Lokalny checkout domowy nie
-  został pobrany ponownie; jego historia Git nie jest zsynchronizowana ze
-  zdalną. Na początku kolejnej sesji sprawdź stan GitHuba i bezpiecznie
-  zsynchronizuj checkout przed dalszymi commitami. Nie resetuj go w ciemno.
-- `master` i `v1-stable` pozostają nietknięte.
+- *(Zapis historyczny)*: Wstępna implementacja adaptera `KodiJsonRpcAdapter` i odczytu NFO. Wówczas `service.py` uruchamiał v2 jedynie do odzyskiwania, a pełny cykl v2 nie był jeszcze zintegrowany.
+- *(Aktualizacja z 2026-10-16/17)*: Pełny cykl `v2_runtime.sync_cycle()` został włączony do `_execute_integrated_live_cycle()` w `service.py` i jest objęty testami jednostkowymi. Weryfikacja funkcjonalna w środowisku rzeczywistego Kodi jest prowadzona odrębnie przez Agenta Antigravity.
 
 
-## Stan przekazania — 2026-10-16
+
+## Stan przekazania — 2026-10-16 / 2026-10-17
 
 - Gałąź `v2/rewrite-2026-10-10` została wcześniej scalona do `master`; aktywny rozwój toczy się na `master` (`v1-stable` pozostaje tylko do odczytu).
 - Domknięto pełny cykl synchronizacji i inicjalizacji w runtime v2 (`sudosync_v2/runtime.py`, `engine.py`, `planning.py`, `initialization.py`, `snapshot.py`):
@@ -139,16 +105,13 @@ nadrzędna jest bieżąca prośba; potem zaktualizuj te pliki.
   - Usunięto odrzucanie snapshotów starszych niż 7 dni w `_validate_snapshot` i `_validate_remote_snapshot` (urządzenie włączone po dłuższej przerwie normalnie dogania stan sieci) oraz poprawiono porównywanie dat UTC (`tzinfo=timezone.utc`).
   - `read_remote_snapshots()` ignoruje pliki w formacie `SudoSync v2 snapshot`, dzięki czemu koegzystencja katalogu v2 nie powoduje fałszywych błędów odczytu snapshotów.
   - `_record()` oraz `_get_secure_local_identity_map()` łączą identyfikatory z JSON-RPC Kodi z identyfikatorami z plików `.nfo` (w tym `sudosync`), zamiast pomijać `.nfo`, gdy Kodi zwróci częściowy zestaw ID.
-- Potwierdzone testy jednostkowe: 181 testów uruchomionych (`python -m unittest discover -s tests -p "test_*.py" -v`), 178 zaliczonych, 3 pominięte (testy symlinków na Windows).
-- Zbudowano lokalną paczkę instalacyjną ZIP gotową do bezpośrednich testów beta na urządzeniach Kodi użytkownika (pliki `*.zip` są wykluczone w `.gitignore`).
-- Wdrożono poprawki po audycie commitu `d1096c3`: dodano posortowane aliasy rekordu klienta do elementów planu (`build_live_plan` i `build_dry_run` w `sudosync_merge.py`), uszczelniono kontrolę tożsamości w `_apply_one_planned_item` (fail-closed przy pustych lub rozłącznych aliasach), dodano logowanie `LOGWARNING` w `_get_secure_local_identity_map` oraz obsługę milisekund w parserze czasu `_validate_remote_snapshot` wraz z 14 nowymi testami w `tests/test_live_apply_identity.py` (łącznie 195 testów, 192 zaliczone, 3 pominięte) i przebudowano lokalną paczkę `service.sudosync-2.0.0.zip`.
-- Wdrożono poprawki wersjonowania pierwszego snapshotu i odporności pętli usługi:
-  - `_record_versions` przy braku poprzedniego snapshotu (`previous_snapshot is None`) zawsze nadaje wersje zerowe (`lc=0, seq=0`), chroniąc historię odtworzeń peerów przed nadpisaniem przez świeżo dołączone urządzenie.
-  - `_initial_snapshot_and_analyse` publikuje snapshot do v2 wyłącznie po zakończeniu inicjalizacji (`init_completed=True`), a `_sync_v2_after_initial_apply` publikuje stan po inicjalizacji z jawnym `suppress_local_changes=True`.
-  - Dodano backoff `_live_retry_delay_seconds` (minimum 30 s lub czas cyklu pollingu) po błędzie lub blokadzie w `_execute_integrated_live_cycle` bez kasowania flag `dirty`.
-  - Potwierdzone testy: 219 testów (w tym nowy zestaw `tests/test_v2_first_publish_and_backoff.py`), 216 zaliczonych, 3 pominięte (symlinki Windows).
-- Domknięto backoff pętli usługi przy wyniku `busy` bez błędu i blokady (`LIVE_BUSY_RETRY_SECONDS = 10` w `service.sudosync/service.py`) z zachowaniem wszystkich flag `dirty`. Dodano instrukcję bezpiecznego ręcznego testu na urządzeniu Kodi w pliku [`TEST_NA_KODI.md`](TEST_NA_KODI.md). Bieżący zestaw testów jednostkowych liczy 223 testy (`tests/test_v2_busy_backoff.py`), w tym 220 zaliczonych i 3 pominięte (symlinki Windows). Z aktualnego commitu na gałęzi `master` zbudowano i opublikowano na GitHubie (w GitHub Releases `v2.0.0`) niepodpisaną paczkę testową `service.sudosync-2.0.0.zip`. Test na Kodi odbywa się w scenariuszu czystej instalacji po zmianie nazwy starego folderu `.SudoSync` na NAS i usunięciu poprzedniej wersji ze wszystkich urządzeń Kodi.
+- Wdrożono poprawki wersjonowania pierwszego snapshotu i odporności pętli usługi (`LIVE_BUSY_RETRY_SECONDS = 10` w `service.sudosync/service.py`) z zachowaniem wszystkich flag `dirty`.
+- W wydaniach `2.0.1` i `2.0.2`:
+  - Wprowadzono mechanizm dzierżawy pojedynczego aktywnego Kodi w sieci (`active_kodi_lock.json`, `acquire_network_active_kodi_lease`, `refresh_network_active_kodi_lease`, `release_network_active_kodi_lease`) oraz strażnika minimalnej wersji wtyczki (`min_addon_version` w `SudoSync.cfg`).
+  - Pętla usługi w `service.py` reaguje na wynik `False` z `refresh_network_active_kodi_lease()` (spowodowany przejęciem dzierżawy przez inne Kodi lub podbiciem `min_addon_version` w `SudoSync.cfg` powyżej wersji lokalnej): loguje ostrzeżenie, wyświetla powiadomienie i przerywa pętlę usługi.
+  - Całkowicie usunięto wycofany mechanizm automatycznej aktualizacji ze wspólnego folderu `.SudoSync` na NAS (`check_and_enforce_updates_before_bootstrap`, `find_latest_update`, `check_for_update`, `install_latest_update`, `_validate_update_zip`, `sign_release.py`). Aktualizacje odbywają się przez GitHub Releases (raz na 24 h za zgodą użytkownika lub ręcznie) oraz przez ręczny wybór pliku ZIP.
 - Polityka wydań i wersjonowania (od 2026-10-17):
   - Kolejne paczki na GitHub Releases są publikowane jako pełne wydania (**Release**, bez flagi `Pre-release`, jako `Latest`), aby endpoint `/releases/latest` zawsze zwracał najnowszą wersję.
   - Większe zmiany otrzymują kolejny numer na trzeciej pozycji (`patch`), np. `2.0.1`, `2.0.2`, ..., `2.0.12`.
+
 

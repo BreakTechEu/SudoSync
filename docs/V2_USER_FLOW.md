@@ -111,9 +111,8 @@ asystenta widoczne na zrzucie nie są źródłem wymagań.
   nie kopiować tej granicy wieku bez rozwiązania, które nie odrzuca ważnych
   zmian tylko dlatego, że Kodi długo nie było uruchamiane.
 
-## Granica obecnej implementacji
+## Stan implementacji i testowania
 
-W chwili zapisania tego dokumentu v2 ma logikę domenową, adaptery, podgląd,
-planowanie, transakcje i odzyskiwanie testowane jednostkowo. Pełne podłączenie
-tego przepływu do `service.py`, konfiguratora v2 i zwykłego cyklu Kodi pozostaje
-pracą do wykonania. Obecny bootstrap i usługa uruchamiają jeszcze starą ścieżkę.
+- Logika domenowa v2, adaptery JSON-RPC/VFS, kreator pierwszego uruchomienia i migracji (`sudosync_bootstrap.py`), dzierżawa pojedynczego aktywnego Kodi (`active_kodi_lock.json`), strażnik minimalnej wersji sieciowej (`min_addon_version` w `SudoSync.cfg`), aktualizator GitHub Releases / lokalnego ZIP oraz pełny cykl `v2_runtime.sync_cycle()` są zaimplementowane i podłączone do `service.py` oraz `default.py`.
+- Moduły te są pokryte zautomatyzowanymi testami jednostkowymi (z atrapami API Kodi). Testy funkcjonalne w rzeczywistym środowisku Kodi są prowadzone odrębnie przez Agenta Antigravity i właściciela projektu w ramach testów wersji Beta.
+
