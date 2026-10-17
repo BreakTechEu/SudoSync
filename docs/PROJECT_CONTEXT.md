@@ -142,4 +142,9 @@ nadrzędna jest bieżąca prośba; potem zaktualizuj te pliki.
 - Potwierdzone testy jednostkowe: 181 testów uruchomionych (`python -m unittest discover -s tests -p "test_*.py" -v`), 178 zaliczonych, 3 pominięte (testy symlinków na Windows).
 - Zbudowano lokalną paczkę instalacyjną ZIP gotową do bezpośrednich testów beta na urządzeniach Kodi użytkownika (pliki `*.zip` są wykluczone w `.gitignore`).
 - Wdrożono poprawki po audycie commitu `d1096c3`: dodano posortowane aliasy rekordu klienta do elementów planu (`build_live_plan` i `build_dry_run` w `sudosync_merge.py`), uszczelniono kontrolę tożsamości w `_apply_one_planned_item` (fail-closed przy pustych lub rozłącznych aliasach), dodano logowanie `LOGWARNING` w `_get_secure_local_identity_map` oraz obsługę milisekund w parserze czasu `_validate_remote_snapshot` wraz z 14 nowymi testami w `tests/test_live_apply_identity.py` (łącznie 195 testów, 192 zaliczone, 3 pominięte) i przebudowano lokalną paczkę `service.sudosync-2.0.0.zip`.
+- Wdrożono poprawki wersjonowania pierwszego snapshotu i odporności pętli usługi:
+  - `_record_versions` przy braku poprzedniego snapshotu (`previous_snapshot is None`) zawsze nadaje wersje zerowe (`lc=0, seq=0`), chroniąc historię odtworzeń peerów przed nadpisaniem przez świeżo dołączone urządzenie.
+  - `_initial_snapshot_and_analyse` publikuje snapshot do v2 wyłącznie po zakończeniu inicjalizacji (`init_completed=True`), a `_sync_v2_after_initial_apply` publikuje stan po inicjalizacji z jawnym `suppress_local_changes=True`.
+  - Dodano backoff `_live_retry_delay_seconds` (minimum 30 s lub czas cyklu pollingu) po błędzie lub blokadzie w `_execute_integrated_live_cycle` bez kasowania flag `dirty`.
+  - Potwierdzone testy: 219 testów (w tym nowy zestaw `tests/test_v2_first_publish_and_backoff.py`), 216 zaliczonych, 3 pominięte (symlinki Windows).
 
